@@ -35,7 +35,15 @@ const itemSchema = new Schema(
       enum: ["50s", "60s", "70s", "80s", "90s", "y2k"],
     },
     brand: String,
-    images: [String],
+    images: {
+      type: [
+        {
+          type: String,
+          default: [], // Cloudinary URLs
+        },
+      ],
+      default: [],
+    },
     inStock: {
       type: Boolean,
       default: true,

@@ -12,9 +12,13 @@ const app = express();
 
 app.use(
   cors({
-    origin: process.env.ORIGIN,
-  })
-);
+    origin: [process.env.ORIGIN, 'https://vintage-vault-shop.netlify.app',
+    'http://localhost:5173',     
+    'https://vintage-vault-shop.netlify.app', // Your production site
+    'http://localhost:3000'       // Another common local development port
+  ],
+  credentials: true
+}));
 
 // ℹ️ This function is getting exported from the config folder. It runs most pieces of middleware
 require("./config")(app);
