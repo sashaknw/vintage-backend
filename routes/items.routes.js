@@ -5,18 +5,28 @@ const { isAuthenticated } = require("../middleware/jwt.middleware");
 // Get all items
 router.get("/", async (req, res, next) => {
   try {
-    const items = await Item.find();
+    const { category } = req.query;
+    let filter = {};
+
+    // If category query parameter is provided, add it to the filter
+    if (category) {
+      filter.category = category;
+    }
+
+    // Find items that match the filter
+    const items = await Item.find(filter);
     res.json(items);
   } catch (error) {
     next(error);
   }
 });
 
+
 // Get single item
 router.get("/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
-    const item = await Item.findById(id).populate("seller", "username email");
+    const item = await Item.findById(id);
 
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
