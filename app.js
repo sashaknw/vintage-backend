@@ -4,13 +4,10 @@ require("dotenv").config();
 // ℹ️ Connects to the database
 require("./db");
 
-// Handles http requests (express is node js framework)
 const express = require("express");
 const cors = require("cors");
 
 const app = express();
-
-// CORS configuration - MUST be before any routes and other middleware
 app.use(
   cors({
     origin: [
@@ -49,6 +46,9 @@ app.use("/api/items", itemsRoutes);
 
 const ordersRoutes = require("./routes/orders.routes");
 app.use("/api/orders", ordersRoutes);
+
+const favoritesRoutes = require("./routes/favorites.routes");
+app.use("/api/favorites", favoritesRoutes);
 
 // ❗ To handle errors. Routes that don't exist or errors that you handle in specific routes
 // This should always be the last middleware to register
