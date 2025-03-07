@@ -3,29 +3,7 @@ const router = require("express").Router();
 const { isAuthenticated } = require("../middleware/jwt.middleware");
 const User = require("../models/User.model");
 const Item = require("../models/Item.model");
-const mongoose = require("mongoose");
-
-// Create a Favorite model
-const Favorite = mongoose.model(
-  "Favorite",
-  new mongoose.Schema(
-    {
-      user: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-        required: true,
-      },
-      item: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Item",
-        required: true,
-      },
-    },
-    {
-      timestamps: true,
-    }
-  )
-);
+const Favorite = require("../models/Favorite.model");
 
 // Get all favorites for the current user
 router.get("/", isAuthenticated, async (req, res, next) => {
