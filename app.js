@@ -17,10 +17,19 @@ app.use(
       "https://vintage-vault-shop.netlify.app",
       "http://localhost:5173",
       "http://localhost:5174",
-      "https://vintage-vault-shop.netlify.app", // Your production site
-      "http://localhost:3000", // Another common local development port
+      "http://localhost:3000",
     ],
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Origin",
+      "X-Requested-With",
+      "Content-Type",
+      "Accept",
+      "Authorization",
+    ],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   })
 );
 
