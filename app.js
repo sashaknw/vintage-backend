@@ -10,6 +10,7 @@ const cors = require("cors");
 
 const app = express();
 
+// CORS configuration - MUST be before any routes and other middleware
 app.use(
   cors({
     origin: [
