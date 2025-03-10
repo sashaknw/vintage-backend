@@ -50,6 +50,10 @@ app.use("/api/orders", ordersRoutes);
 const favoritesRoutes = require("./routes/favorites.routes");
 app.use("/api/favorites", favoritesRoutes);
 
+const forumRoutes = require("./routes/forum.routes");
+app.use("/api/forum", forumRoutes);
+
+
 // ❗ To handle errors. Routes that don't exist or errors that you handle in specific routes
 // This should always be the last middleware to register
 require("./error-handling")(app);

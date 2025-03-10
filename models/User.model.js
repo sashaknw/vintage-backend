@@ -18,6 +18,14 @@ const userSchema = new Schema(
       type: String,
       required: [true, "Name is required."],
     },
+    bio: {
+      type: String,
+      default: "",
+    },
+    profilePicture: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,
