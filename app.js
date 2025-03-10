@@ -53,6 +53,9 @@ app.use("/api/favorites", favoritesRoutes);
 const forumRoutes = require("./routes/forum.routes");
 app.use("/api/forum", forumRoutes);
 
+const userRoutes = require("./routes/user.routes");
+app.use("/api/users", userRoutes);
+
 
 // ❗ To handle errors. Routes that don't exist or errors that you handle in specific routes
 // This should always be the last middleware to register
