@@ -85,8 +85,30 @@ router.post("/login", async (req, res, next) => {
 });
 
 // VERIFY
-router.get("/verify", isAuthenticated, (req, res) => {
-  res.json(req.payload);
+router.get("/verify", isAuthenticated, async (req, res, next) => {
+  try {
+    const userId = req.payload._id;
+        const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+        const userProfile = {
+      id: user._id,
+      name: user.name,
+      username: user.name,
+      email: user.email,
+      profilePicture: user.profilePicture,
+      bio: user.bio,
+      joinedAt: user.createdAt,
+      address: user.address,
+      phone: user.phone
+    };
+    
+    res.status(200).json(userProfile);
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;
