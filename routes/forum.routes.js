@@ -62,7 +62,7 @@ router.get("/topics/:topicId", async (req, res, next) => {
     await ForumTopic.findByIdAndUpdate(topicId, { $inc: { viewCount: 1 } });
 
     const topic = await ForumTopic.findById(topicId)
-      .populate("author", "name")
+      .populate("author", "name profilePicture")
       .populate("category", "name");
 
     if (!topic) {
@@ -70,7 +70,7 @@ router.get("/topics/:topicId", async (req, res, next) => {
     }
 
     const replies = await ForumReply.find({ topic: topicId })
-      .populate("author", "name")
+      .populate("author", "name profilePicture")
       .sort({ createdAt: 1 });
 
     res.status(200).json({
