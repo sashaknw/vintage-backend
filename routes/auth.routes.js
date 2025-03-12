@@ -32,8 +32,16 @@ router.post("/signup", async (req, res, next) => {
       name,
     });
 
-    // Create a payload for the JWT
-    const payload = { _id: user._id, email: user.email, name: user.name };
+    // Fetch the complete user to get default fields
+    const completeUser = await User.findById(user._id);
+
+    // Create a payload with more complete user data
+    const payload = {
+      _id: completeUser._id,
+      email: completeUser.email,
+      name: completeUser.name,
+      profilePicture: completeUser.profilePicture || "",
+    };
 
     // Create and sign the token
     const authToken = jwt.sign(payload, process.env.TOKEN_SECRET, {
@@ -41,7 +49,15 @@ router.post("/signup", async (req, res, next) => {
       expiresIn: "6h",
     });
 
-    res.status(201).json({ user: payload, token: authToken });
+    res.status(201).json({
+      user: {
+        id: completeUser._id,
+        email: completeUser.email,
+        name: completeUser.name,
+        profilePicture: completeUser.profilePicture || "",
+      },
+      token: authToken,
+    });
   } catch (error) {
     next(error);
   }
@@ -69,8 +85,13 @@ router.post("/login", async (req, res, next) => {
       return res.status(401).json({ message: "Credentials not valid" });
     }
 
-    // Create a payload for the JWT
-    const payload = { _id: user._id, email: user.email, name: user.name };
+    // Create a payload with more complete user data
+    const payload = {
+      _id: user._id,
+      email: user.email,
+      name: user.name,
+      profilePicture: user.profilePicture || "",
+    };
 
     // Create and sign the token
     const authToken = jwt.sign(payload, process.env.TOKEN_SECRET, {
@@ -78,7 +99,15 @@ router.post("/login", async (req, res, next) => {
       expiresIn: "6h",
     });
 
-    res.status(200).json({ user: payload, token: authToken });
+    res.status(200).json({
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        profilePicture: user.profilePicture || "",
+      },
+      token: authToken,
+    });
   } catch (error) {
     next(error);
   }
@@ -88,24 +117,25 @@ router.post("/login", async (req, res, next) => {
 router.get("/verify", isAuthenticated, async (req, res, next) => {
   try {
     const userId = req.payload._id;
-        const user = await User.findById(userId);
-    
+    const user = await User.findById(userId);
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-        const userProfile = {
+
+    // Return consistent field names with what's used during login/signup
+    res.status(200).json({
       id: user._id,
+      _id: user._id, // Include both for compatibility
       name: user.name,
       username: user.name,
       email: user.email,
-      profilePicture: user.profilePicture,
-      bio: user.bio,
+      profilePicture: user.profilePicture || "",
+      bio: user.bio || "",
       joinedAt: user.createdAt,
       address: user.address,
-      phone: user.phone
-    };
-    
-    res.status(200).json(userProfile);
+      phone: user.phone,
+    });
   } catch (error) {
     next(error);
   }
