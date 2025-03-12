@@ -1,10 +1,8 @@
-
 const router = require("express").Router();
 const ForumCategory = require("../models/ForumCategory.model");
 const ForumTopic = require("../models/ForumTopic.model");
 const ForumReply = require("../models/ForumReply.model");
 const { isAuthenticated } = require("../middleware/jwt.middleware");
-
 
 router.get("/categories", async (req, res, next) => {
   try {
@@ -14,7 +12,6 @@ router.get("/categories", async (req, res, next) => {
     next(error);
   }
 });
-
 
 router.get("/categories/:categoryId", async (req, res, next) => {
   try {
@@ -27,7 +24,7 @@ router.get("/categories/:categoryId", async (req, res, next) => {
 
     // Get topics for this category with populated author field and reply count
     const topics = await ForumTopic.find({ category: categoryId })
-      .populate("author", "name")
+      .populate("author", "name profilePicture")
       .sort({ isPinned: -1, lastActivity: -1 })
       .lean();
 
@@ -58,12 +55,15 @@ router.get("/topics/:topicId", async (req, res, next) => {
   try {
     const { topicId } = req.params;
 
-    // Increment view count
     await ForumTopic.findByIdAndUpdate(topicId, { $inc: { viewCount: 1 } });
 
+    // Explicitly include followers in the query to ensure it's returned
     const topic = await ForumTopic.findById(topicId)
       .populate("author", "name profilePicture")
-      .populate("category", "name");
+      .populate("category", "name")
+      .select(
+        "title content author category createdAt lastActivity followers isPinned isLocked viewCount"
+      );
 
     if (!topic) {
       return res.status(404).json({ message: "Topic not found" });
@@ -102,11 +102,11 @@ router.post("/topics", isAuthenticated, async (req, res, next) => {
       content,
       author,
       category: categoryId,
-      followers: [author], 
+      followers: [author],
     });
 
     const populatedTopic = await ForumTopic.findById(newTopic._id)
-      .populate("author", "name")
+      .populate("author", "name profilePicture")
       .populate("category", "name");
 
     res.status(201).json(populatedTopic);
@@ -151,7 +151,7 @@ router.post(
 
       const populatedReply = await ForumReply.findById(newReply._id).populate(
         "author",
-        "name"
+        "name profilePicture"
       );
 
       res.status(201).json(populatedReply);
@@ -240,7 +240,7 @@ router.get("/user/followed-topics", isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id;
 
     const followedTopics = await ForumTopic.find({ followers: userId })
-      .populate("author", "name")
+      .populate("author", "name profilePicture")
       .populate("category", "name")
       .sort({ lastActivity: -1 });
 
@@ -264,7 +264,7 @@ router.get("/search", async (req, res, next) => {
         { content: { $regex: query, $options: "i" } },
       ],
     })
-      .populate("author", "name")
+      .populate("author", "name profilePicture")
       .populate("category", "name")
       .sort({ lastActivity: -1 })
       .limit(20);
