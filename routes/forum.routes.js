@@ -2,7 +2,17 @@ const router = require("express").Router();
 const ForumCategory = require("../models/ForumCategory.model");
 const ForumTopic = require("../models/ForumTopic.model");
 const ForumReply = require("../models/ForumReply.model");
+const User = require("../models/User.model");
 const { isAuthenticated } = require("../middleware/jwt.middleware");
+
+const isAdmin = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    return user && user.isAdmin === true;
+  } catch (error) {
+    return false;
+  }
+};
 
 router.get("/categories", async (req, res, next) => {
   try {
@@ -22,13 +32,11 @@ router.get("/categories/:categoryId", async (req, res, next) => {
       return res.status(404).json({ message: "Category not found" });
     }
 
-    // Get topics for this category with populated author field and reply count
     const topics = await ForumTopic.find({ category: categoryId })
       .populate("author", "name profilePicture")
       .sort({ isPinned: -1, lastActivity: -1 })
       .lean();
 
-    // Get reply counts for each topic
     const topicsWithReplyCount = await Promise.all(
       topics.map(async (topic) => {
         const replyCount = await ForumReply.countDocuments({
@@ -50,14 +58,12 @@ router.get("/categories/:categoryId", async (req, res, next) => {
   }
 });
 
-// Get topic with replies
 router.get("/topics/:topicId", async (req, res, next) => {
   try {
     const { topicId } = req.params;
 
     await ForumTopic.findByIdAndUpdate(topicId, { $inc: { viewCount: 1 } });
 
-    // Explicitly include followers in the query to ensure it's returned
     const topic = await ForumTopic.findById(topicId)
       .populate("author", "name profilePicture")
       .populate("category", "name")
@@ -91,7 +97,6 @@ router.post("/topics", isAuthenticated, async (req, res, next) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    // Check if category exists
     const categoryExists = await ForumCategory.findById(categoryId);
     if (!categoryExists) {
       return res.status(404).json({ message: "Category not found" });
@@ -115,6 +120,70 @@ router.post("/topics", isAuthenticated, async (req, res, next) => {
   }
 });
 
+router.put("/topics/:topicId", isAuthenticated, async (req, res, next) => {
+  try {
+    const { topicId } = req.params;
+    const { content, title } = req.body;
+    const userId = req.payload._id;
+
+    const topic = await ForumTopic.findById(topicId);
+
+    if (!topic) {
+      return res.status(404).json({ message: "Topic not found" });
+    }
+
+    if (topic.author.toString() !== userId) {
+      return res
+        .status(403)
+        .json({ message: "You can only edit your own topics" });
+    }
+
+    const updates = {};
+    if (content) updates.content = content;
+    if (title) updates.title = title;
+    updates.updatedAt = new Date();
+
+    const updatedTopic = await ForumTopic.findByIdAndUpdate(topicId, updates, {
+      new: true,
+    })
+      .populate("author", "name profilePicture")
+      .populate("category", "name");
+
+    res.status(200).json(updatedTopic);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/topics/:topicId", isAuthenticated, async (req, res, next) => {
+  try {
+    const { topicId } = req.params;
+    const userId = req.payload._id;
+
+    const topic = await ForumTopic.findById(topicId);
+
+    if (!topic) {
+      return res.status(404).json({ message: "Topic not found" });
+    }
+
+    const userIsAdmin = await isAdmin(userId);
+
+    if (!userIsAdmin) {
+      return res
+        .status(403)
+        .json({ message: "Only administrators can delete topics" });
+    }
+
+    await ForumReply.deleteMany({ topic: topicId });
+
+    await ForumTopic.findByIdAndDelete(topicId);
+
+    res.status(200).json({ message: "Topic deleted successfully" });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post(
   "/topics/:topicId/replies",
   isAuthenticated,
@@ -128,7 +197,6 @@ router.post(
         return res.status(400).json({ message: "Reply content is required" });
       }
 
-      // Check if topic exists and is not locked
       const topic = await ForumTopic.findById(topicId);
       if (!topic) {
         return res.status(404).json({ message: "Topic not found" });
@@ -144,7 +212,6 @@ router.post(
         topic: topicId,
       });
 
-      // Update last activity on the topic
       await ForumTopic.findByIdAndUpdate(topicId, {
         lastActivity: new Date(),
       });
@@ -161,6 +228,50 @@ router.post(
   }
 );
 
+router.delete("/replies/:replyId", isAuthenticated, async (req, res, next) => {
+  try {
+    const { replyId } = req.params;
+    const userId = req.payload._id;
+
+    const reply = await ForumReply.findById(replyId);
+
+    if (!reply) {
+      return res.status(404).json({ message: "Reply not found" });
+    }
+
+    const userIsAdmin = await isAdmin(userId);
+
+    if (reply.author.toString() !== userId && !userIsAdmin) {
+      return res
+        .status(403)
+        .json({ message: "You can only delete your own replies" });
+    }
+
+    await ForumReply.findByIdAndDelete(replyId);
+
+    const topic = await ForumTopic.findById(reply.topic);
+    if (topic) {
+      const latestReply = await ForumReply.findOne({ topic: reply.topic }).sort(
+        { createdAt: -1 }
+      );
+
+      if (latestReply) {
+        await ForumTopic.findByIdAndUpdate(reply.topic, {
+          lastActivity: latestReply.createdAt,
+        });
+      } else {
+        await ForumTopic.findByIdAndUpdate(reply.topic, {
+          lastActivity: topic.createdAt,
+        });
+      }
+    }
+
+    res.status(200).json({ message: "Reply deleted successfully" });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post(
   "/topics/:topicId/follow",
   isAuthenticated,
@@ -176,7 +287,6 @@ router.post(
 
       const isFollowing = topic.followers.includes(userId);
 
-      // Add or remove the user from followers
       if (isFollowing) {
         await ForumTopic.findByIdAndUpdate(topicId, {
           $pull: { followers: userId },
@@ -209,10 +319,10 @@ router.post(
         return res.status(404).json({ message: "Reply not found" });
       }
 
-      // Check if user already liked
+      
       const hasLiked = reply.likes.includes(userId);
 
-      // Add or remove the like
+     
       if (hasLiked) {
         await ForumReply.findByIdAndUpdate(replyId, {
           $pull: { likes: userId },
