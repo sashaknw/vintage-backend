@@ -16,6 +16,10 @@ app.use(
       "http://localhost:5173",
       "http://localhost:5174",
       "http://localhost:3000",
+      // Add more generic mobile origins if needed:
+      "capacitor://localhost",
+      "ionic://localhost",
+      "null",
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
