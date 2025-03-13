@@ -127,6 +127,35 @@ router.put(
   }
 );
 
+
+router.get("/user/:userId/topics", async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    
+    const topics = await ForumTopic.find({ author: userId })
+      .populate("author", "name profilePicture")
+      .populate("category", "name")
+      .sort({ createdAt: -1 });
+    
+    const topicsWithReplyCount = await Promise.all(
+      topics.map(async (topic) => {
+        const replyCount = await ForumReply.countDocuments({
+          topic: topic._id,
+        });
+        const topicObj = topic.toObject();
+        return {
+          ...topicObj,
+          replyCount,
+        };
+      })
+    );
+    
+    res.status(200).json(topicsWithReplyCount);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.delete(
   "/categories/:categoryId",
   isAuthenticated,
