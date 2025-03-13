@@ -1,18 +1,18 @@
 const router = require("express").Router();
 const Item = require("../models/Item.model");
 const { isAuthenticated } = require("../middleware/jwt.middleware");
-const { uploadCloud } = require("../config/cloudinary.config"); // Add Cloudinary upload
+const { uploadCloud } = require("../config/cloudinary.config");
 
-// Get all items
 router.get("/", async (req, res, next) => {
   try {
-    const { category, brand, era, condition, minPrice, maxPrice } = req.query;
+    const { category, brand, era, condition, size, minPrice, maxPrice } =
+      req.query;
     let filter = {};
 
-    // Advanced filtering
     if (category) filter.category = category;
     if (brand) filter.brand = brand;
     if (era) filter.era = era;
+    if (size) filter.size = size;
     if (condition) filter.condition = condition;
     if (minPrice || maxPrice) {
       filter.price = {};
@@ -20,8 +20,7 @@ router.get("/", async (req, res, next) => {
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    // Find items that match the filter
-    const items = await Item.find(filter).populate("seller", "username");
+    const items = await Item.find(filter).populate("seller", "name");
     res.json(items);
   } catch (error) {
     next(error);
@@ -32,7 +31,7 @@ router.get("/", async (req, res, next) => {
 router.get("/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
-    const item = await Item.findById(id).populate("seller", "username");
+    const item = await Item.findById(id).populate("seller", "name");
 
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
@@ -48,30 +47,115 @@ router.get("/:id", async (req, res, next) => {
   }
 });
 
-// Create new item (protected route - only authenticated users)
 router.post(
-  "/",
+  "/upload",
   isAuthenticated,
-  uploadCloud.array("images"), // Cloudinary upload middleware
+  uploadCloud.single("image"),
   async (req, res, next) => {
     try {
-      const {
-        name,
-        description,
-        price,
-        size,
-        category,
-        condition,
-        era,
-        brand,
-        inStock,
-      } = req.body;
+      const isAdmin = req.payload.isAdmin;
 
-      // Get image URLs from Cloudinary upload
-      const images = req.files ? req.files.map((file) => file.path) : [];
+      if (!isAdmin) {
+        return res
+          .status(403)
+          .json({ message: "Only admins can upload images" });
+      }
 
-      // Add the current user as the seller
-      const newItem = await Item.create({
+      if (!req.file) {
+        return res.status(400).json({ message: "No image uploaded" });
+      }
+
+      res.status(200).json({
+        imageUrl: req.file.path,
+        message: "Image uploaded successfully",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post("/", isAuthenticated, async (req, res, next) => {
+  try {
+    const isAdmin = req.payload.isAdmin;
+
+    if (!isAdmin) {
+      return res
+        .status(403)
+        .json({ message: "Only admins can create new items" });
+    }
+
+    const {
+      name,
+      description,
+      price,
+      size,
+      category,
+      condition,
+      era,
+      brand,
+      inStock,
+      images,
+    } = req.body;
+
+    const newItem = await Item.create({
+      name,
+      description,
+      price: parseFloat(price),
+      size,
+      category,
+      condition,
+      era,
+      brand,
+      images: Array.isArray(images) ? images : [images].filter(Boolean),
+      inStock: inStock === "true" || inStock === true || inStock === undefined,
+      seller: req.payload._id, 
+    });
+
+    res.status(201).json(newItem);
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        message: "Validation Error",
+        errors: Object.values(error.errors).map((err) => err.message),
+      });
+    }
+    next(error);
+  }
+});
+
+router.put("/:id", isAuthenticated, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const isAdmin = req.payload.isAdmin;
+
+    if (!isAdmin) {
+      return res.status(403).json({ message: "Only admins can update items" });
+    }
+
+    const {
+      name,
+      description,
+      price,
+      size,
+      category,
+      condition,
+      era,
+      brand,
+      inStock,
+      images,
+    } = req.body;
+
+    const item = await Item.findById(id);
+
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    const updatedItem = await Item.findByIdAndUpdate(
+      id,
+      {
         name,
         description,
         price: parseFloat(price),
@@ -80,127 +164,47 @@ router.post(
         condition,
         era,
         brand,
-        images,
-        inStock: inStock === "true" || inStock === true,
-        seller: req.payload._id, // from JWT middleware
+        images: Array.isArray(images) ? images : [images].filter(Boolean),
+        inStock:
+          inStock === "true" || inStock === true || inStock === undefined,
+      },
+      {
+        new: true, 
+        runValidators: true,
+      }
+    );
+
+    res.json(updatedItem);
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        message: "Validation Error",
+        errors: Object.values(error.errors).map((err) => err.message),
       });
-
-      res.status(201).json(newItem);
-    } catch (error) {
-      // Handle validation errors
-      if (error.name === "ValidationError") {
-        return res.status(400).json({
-          message: "Validation Error",
-          errors: Object.values(error.errors).map((err) => err.message),
-        });
-      }
-      next(error);
     }
+    next(error);
   }
-);
+});
 
-// Update item (protected - only the seller can update)
-router.put(
-  "/:id",
-  isAuthenticated,
-  uploadCloud.array("images"), // Cloudinary upload middleware
-  async (req, res, next) => {
-    try {
-      const { id } = req.params;
-      const {
-        name,
-        description,
-        price,
-        size,
-        category,
-        condition,
-        era,
-        brand,
-        inStock,
-        existingImages, // For keeping existing images
-      } = req.body;
-
-      // First check if item exists and current user is the seller
-      const item = await Item.findById(id);
-
-      if (!item) {
-        return res.status(404).json({ message: "Item not found" });
-      }
-
-      // Check if current user is the seller
-      if (item.seller.toString() !== req.payload._id) {
-        return res
-          .status(403)
-          .json({ message: "Not authorized to update this item" });
-      }
-
-      // Get new image URLs from Cloudinary upload
-      const newImages = req.files ? req.files.map((file) => file.path) : [];
-
-      // Combine existing and new images
-      const images = [
-        ...(existingImages ? JSON.parse(existingImages) : []),
-        ...newImages,
-      ];
-
-      // Update the item
-      const updatedItem = await Item.findByIdAndUpdate(
-        id,
-        {
-          name,
-          description,
-          price: parseFloat(price),
-          size,
-          category,
-          condition,
-          era,
-          brand,
-          images,
-          inStock: inStock === "true" || inStock === true,
-        },
-        {
-          new: true, // Return the updated document
-          runValidators: true, // Ensure model validations run on update
-        }
-      );
-
-      res.json(updatedItem);
-    } catch (error) {
-      // Handle validation errors
-      if (error.name === "ValidationError") {
-        return res.status(400).json({
-          message: "Validation Error",
-          errors: Object.values(error.errors).map((err) => err.message),
-        });
-      }
-      next(error);
-    }
-  }
-);
-
-// Delete item (protected - only the seller can delete)
 router.delete("/:id", isAuthenticated, async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    // First check if item exists and current user is the seller
+    const isAdmin = req.payload.isAdmin;
+
+    if (!isAdmin) {
+      return res.status(403).json({ message: "Only admins can delete items" });
+    }
+
     const item = await Item.findById(id);
 
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    // Check if current user is the seller
-    if (item.seller.toString() !== req.payload._id) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to delete this item" });
-    }
-
-    // Delete the item
     await Item.findByIdAndDelete(id);
 
-    res.status(204).send(); // No content response for successful delete
+    res.status(204).send();
   } catch (error) {
     next(error);
   }
