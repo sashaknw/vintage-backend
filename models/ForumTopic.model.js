@@ -1,4 +1,3 @@
-
 const { Schema, model } = require("mongoose");
 
 const forumTopicSchema = new Schema(
@@ -42,6 +41,10 @@ const forumTopicSchema = new Schema(
     lastActivity: {
       type: Date,
       default: Date.now,
+    },
+    isAdminPost: {
+      type: Boolean,
+      default: false,
     },
   },
   {

@@ -1,4 +1,3 @@
-
 const { Schema, model } = require("mongoose");
 
 const forumReplySchema = new Schema(
@@ -23,6 +22,10 @@ const forumReplySchema = new Schema(
         ref: "User",
       },
     ],
+    isAdminReply: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
