@@ -4,6 +4,7 @@ const ForumTopic = require("../models/ForumTopic.model");
 const ForumReply = require("../models/ForumReply.model");
 const User = require("../models/User.model");
 const { isAuthenticated } = require("../middleware/jwt.middleware");
+const moderationController = require("../controllers/moderation.controller");
 
 const isAdmin = async (userId) => {
   try {
@@ -12,6 +13,18 @@ const isAdmin = async (userId) => {
   } catch (error) {
     return false;
   }
+};
+
+
+const checkAdmin = async (req, res, next) => {
+  const userId = req.payload._id;
+  const userIsAdmin = await isAdmin(userId);
+
+  if (!userIsAdmin) {
+    return res.status(403).json({ message: "Admin access required" });
+  }
+
+  next();
 };
 
 router.get("/categories", async (req, res, next) => {
@@ -220,9 +233,13 @@ router.get("/topics/:topicId", async (req, res, next) => {
   }
 });
 
-router.post("/topics", isAuthenticated, async (req, res, next) => {
+router.post(
+  "/topics", 
+  isAuthenticated,
+  moderationController.moderateNewTopic,
+  async (req, res, next) => {
   try {
-    const { title, content, categoryId, isPinned, isLocked, isAdminPost } =
+    const { title, content, categoryId, isPinned, isLocked, isAdminPost, acknowledgedIssues } =
       req.body;
     const author = req.payload._id;
     const userIsAdmin = await isAdmin(author);
@@ -230,6 +247,23 @@ router.post("/topics", isAuthenticated, async (req, res, next) => {
     if (!title || !content || !categoryId) {
       return res.status(400).json({ message: "All fields are required" });
     }
+
+ if (
+   req.moderationResult &&
+   req.moderationResult.analysis.isFlagged &&
+   !acknowledgedIssues &&
+   !userIsAdmin
+ ) {
+   // If content is flagged but user hasn't acknowledged, return the issues
+   return res.status(200).json({
+     flaggedContent: {
+       issues: req.moderationResult.analysis.issues,
+       score: req.moderationResult.analysis.moderationScore,
+       summary: req.moderationResult.analysis.summary,
+     },
+   });
+ }
+
 
     const categoryExists = await ForumCategory.findById(categoryId);
     if (!categoryExists) {
@@ -252,6 +286,14 @@ router.post("/topics", isAuthenticated, async (req, res, next) => {
     }
 
     const newTopic = await ForumTopic.create(topicData);
+ if (req.moderationResult) {
+   await moderationController.saveModerationForTopic(
+     newTopic._id,
+     req.moderationResult
+   );
+ }
+
+
 
     const populatedTopic = await ForumTopic.findById(newTopic._id)
       .populate("author", "name profilePicture")
@@ -400,15 +442,32 @@ router.delete("/topics/:topicId", isAuthenticated, async (req, res, next) => {
 router.post(
   "/topics/:topicId/replies",
   isAuthenticated,
+  moderationController.moderateNewReply,
   async (req, res, next) => {
     try {
       const { topicId } = req.params;
-      const { content } = req.body;
+      const { content, acknowledgedIssues } = req.body;
       const author = req.payload._id;
 
       if (!content) {
         return res.status(400).json({ message: "Reply content is required" });
       }
+        if (
+          req.moderationResult &&
+          req.moderationResult.analysis.isFlagged &&
+          !acknowledgedIssues
+        ) {
+          const userIsAdmin = await isAdmin(author);
+          if (!userIsAdmin) {
+            return res.status(200).json({
+              flaggedContent: {
+                issues: req.moderationResult.analysis.issues,
+                score: req.moderationResult.analysis.moderationScore,
+                summary: req.moderationResult.analysis.summary,
+              },
+            });
+          }
+        }
 
       const topic = await ForumTopic.findById(topicId);
       if (!topic) {
@@ -437,6 +496,14 @@ router.post(
       }
 
       const newReply = await ForumReply.create(replyData);
+   if (req.moderationResult) {
+     await moderationController.saveModerationForReply(
+       newReply._id,
+       req.moderationResult
+     );
+   }
+
+
 
       await ForumTopic.findByIdAndUpdate(topicId, {
         lastActivity: new Date(),
