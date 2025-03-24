@@ -240,7 +240,6 @@ const moderationController = {
     }
   },
 
-  // Moderation API endpoints
   processModerationDecision: async (req, res) => {
     try {
       const { moderationId } = req.params;
@@ -252,37 +251,52 @@ const moderationController = {
         return res.status(404).json({ message: "Moderation entry not found" });
       }
 
-      // Update status based on decision
       moderationEntry.status = decision;
       moderationEntry.reviewNote = notes || "";
       moderationEntry.reviewedBy = userId;
 
-      if (modifiedContent) {
-        moderationEntry.suggestedImprovement = modifiedContent;
-
-        // Update the actual content in the appropriate collection
-        if (moderationEntry.contentType === "topic") {
-          await ForumTopic.findByIdAndUpdate(moderationEntry.contentId, {
-            content: modifiedContent,
-          });
-        } else if (moderationEntry.contentType === "reply") {
-          await ForumReply.findByIdAndUpdate(moderationEntry.contentId, {
-            content: modifiedContent,
-          });
-        }
-      }
-
-      await moderationEntry.save();
-
-      res.status(200).json({
-        message: "Moderation decision processed",
-        decision,
-      });
-    } catch (error) {
-      console.error("Error processing moderation decision:", error);
-      res.status(500).json({ message: "Error processing moderation decision" });
+    let contentUpdate = {};
+    if (modifiedContent) {
+      moderationEntry.suggestedImprovement = modifiedContent;
+      contentUpdate.content = modifiedContent;
     }
-  },
+ if (decision === "approved") {
+      contentUpdate.visible = true;
+      contentUpdate.pendingModeration = false;
+      contentUpdate.moderationStatus = "approved";
+    } else if (decision === "rejected") {
+      contentUpdate.visible = false;
+      contentUpdate.pendingModeration = false;
+      contentUpdate.moderationStatus = "rejected";
+    } else if (decision === "modified") {
+      contentUpdate.visible = true;
+      contentUpdate.pendingModeration = false;
+      contentUpdate.moderationStatus = "approved";
+    }
+
+    if (moderationEntry.contentType === "topic") {
+      await ForumTopic.findByIdAndUpdate(
+        moderationEntry.contentId,
+        contentUpdate
+      );
+    } else if (moderationEntry.contentType === "reply") {
+      await ForumReply.findByIdAndUpdate(
+        moderationEntry.contentId,
+        contentUpdate
+      );
+    }
+
+    await moderationEntry.save();
+
+    res.status(200).json({
+      message: "Moderation decision processed",
+      decision,
+    });
+  } catch (error) {
+    console.error("Error processing moderation decision:", error);
+    res.status(500).json({ message: "Error processing moderation decision" });
+  }
+},
 
   getContentImprovement: async (req, res) => {
     try {

@@ -206,6 +206,7 @@ router.delete(
 router.get("/topics/:topicId", async (req, res, next) => {
   try {
     const { topicId } = req.params;
+    const userId = req.payload?._id;
 
     await ForumTopic.findByIdAndUpdate(topicId, { $inc: { viewCount: 1 } });
 
@@ -219,15 +220,31 @@ router.get("/topics/:topicId", async (req, res, next) => {
     if (!topic) {
       return res.status(404).json({ message: "Topic not found" });
     }
+ let isUserAdmin = false;
+ if (userId) {
+   isUserAdmin = await isAdmin(userId);
+ }
+
+ let repliesQuery = { topic: topicId };
+
+ if (!isUserAdmin) {
+   repliesQuery.visible = true;
+ }
 
     const replies = await ForumReply.find({ topic: topicId })
       .populate("author", "name profilePicture isAdmin")
       .sort({ createdAt: 1 });
-
-    res.status(200).json({
-      topic,
-      replies,
-    });
+ const pendingCount = !isUserAdmin
+   ? 0
+   : await ForumReply.countDocuments({
+       topic: topicId,
+       pendingModeration: true,
+     });
+   res.status(200).json({
+     topic,
+     replies,
+     pendingModerationCount: pendingCount,
+   });
   } catch (error) {
     next(error);
   }
@@ -254,7 +271,6 @@ router.post(
    !acknowledgedIssues &&
    !userIsAdmin
  ) {
-   // If content is flagged but user hasn't acknowledged, return the issues
    return res.status(200).json({
      flaggedContent: {
        issues: req.moderationResult.analysis.issues,
@@ -452,22 +468,23 @@ router.post(
       if (!content) {
         return res.status(400).json({ message: "Reply content is required" });
       }
-        if (
-          req.moderationResult &&
-          req.moderationResult.analysis.isFlagged &&
-          !acknowledgedIssues
-        ) {
-          const userIsAdmin = await isAdmin(author);
-          if (!userIsAdmin) {
-            return res.status(200).json({
-              flaggedContent: {
-                issues: req.moderationResult.analysis.issues,
-                score: req.moderationResult.analysis.moderationScore,
-                summary: req.moderationResult.analysis.summary,
-              },
-            });
-          }
+
+      if (
+        req.moderationResult &&
+        req.moderationResult.analysis.isFlagged &&
+        !acknowledgedIssues
+      ) {
+        const userIsAdmin = await isAdmin(author);
+        if (!userIsAdmin) {
+          return res.status(200).json({
+            flaggedContent: {
+              issues: req.moderationResult.analysis.issues,
+              score: req.moderationResult.analysis.moderationScore,
+              summary: req.moderationResult.analysis.summary,
+            },
+          });
         }
+      }
 
       const topic = await ForumTopic.findById(topicId);
       if (!topic) {
@@ -495,15 +512,26 @@ router.post(
         replyData.isAdminReply = true;
       }
 
+      const needsModeration = req.moderationResult && 
+                             req.moderationResult.analysis.isFlagged && 
+                             acknowledgedIssues && 
+                             !userIsAdmin;
+      
+      if (needsModeration) {
+        replyData.pendingModeration = true;
+        replyData.visible = false;
+      } else {
+        replyData.visible = true;
+      }
+
       const newReply = await ForumReply.create(replyData);
-   if (req.moderationResult) {
-     await moderationController.saveModerationForReply(
-       newReply._id,
-       req.moderationResult
-     );
-   }
 
-
+      if (req.moderationResult) {
+        await moderationController.saveModerationForReply(
+          newReply._id,
+          req.moderationResult
+        );
+      }
 
       await ForumTopic.findByIdAndUpdate(topicId, {
         lastActivity: new Date(),
@@ -514,12 +542,20 @@ router.post(
         "name profilePicture isAdmin"
       );
 
+      if (needsModeration) {
+        return res.status(202).json({
+          ...populatedReply.toObject(),
+          message: "Your reply has been submitted and is pending moderation."
+        });
+      }
+
       res.status(201).json(populatedReply);
     } catch (error) {
       next(error);
     }
   }
 );
+
 
 // DELETE  reply
 router.delete("/replies/:replyId", isAuthenticated, async (req, res, next) => {

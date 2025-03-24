@@ -26,6 +26,19 @@ const forumReplySchema = new Schema(
       type: Boolean,
       default: false,
     },
+    visible: {
+      type: Boolean,
+      default: true,
+    },
+    pendingModeration: {
+      type: Boolean,
+      default: false,
+    },
+    moderationStatus: {
+      type: String,
+      enum: ["pending", "approved", "rejected", "none"],
+      default: "none",
+    },
   },
   {
     timestamps: true,
