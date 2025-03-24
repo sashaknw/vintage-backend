@@ -1,10 +1,18 @@
-// routes/moderation.routes.js
 const router = require("express").Router();
 const { isAuthenticated } = require("../middleware/jwt.middleware");
 const moderationController = require("../controllers/moderation.controller");
 const User = require("../models/User.model");
+const rateLimit = require("express-rate-limit");
 
-// Admin check middleware 
+const moderationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, 
+  message: "Too many requests from this IP, please try again after 15 minutes",
+  standardHeaders: true, 
+  legacyHeaders: false, 
+});
+
+
 const isAdmin = async (req, res, next) => {
   try {
     const userId = req.payload._id;
@@ -20,6 +28,8 @@ const isAdmin = async (req, res, next) => {
   }
 };
 
+router.use(moderationLimiter);
+
 router.get(
   "/pending",
   isAuthenticated,
@@ -28,14 +38,14 @@ router.get(
 );
 
 router.post(
-  "/decision/:moderationId",
+  "/:moderationId/process",
   isAuthenticated,
   isAdmin,
   moderationController.processModerationDecision
 );
 
 router.get(
-  "/suggest/:moderationId",
+  "/:moderationId/suggest-improvement",
   isAuthenticated,
   isAdmin,
   moderationController.getContentImprovement
@@ -45,7 +55,7 @@ router.get(
   "/report",
   isAuthenticated,
   isAdmin,
-  moderationController.generateModerationReport
+  moderationController.getModerationReport
 );
 
 router.get(
