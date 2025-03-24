@@ -46,7 +46,12 @@ const forumTopicSchema = new Schema(
       type: Boolean,
       default: false,
     },
-  },
+    hasSpecialReplacements: {
+      type: Boolean,
+      default: false,
+  
+  }
+},
   {
     timestamps: true,
   }

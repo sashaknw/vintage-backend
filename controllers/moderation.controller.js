@@ -1,12 +1,9 @@
-// controllers/moderation.controller.js
 const ForumModeration = require("../models/ForumModeration.model");
 const ForumTopic = require("../models/ForumTopic.model");
 const ForumReply = require("../models/ForumReply.model");
 const ModerationSettings = require("../models/ModerationSettings.model");
 
-// Simple content analysis function
 const analyzeContent = (content) => {
-  // Sample profanity list - you would use a more comprehensive solution in production
   const profanityList = [
     "shit",
     "fuck",
@@ -15,9 +12,60 @@ const analyzeContent = (content) => {
     "ass",
     "bitch",
     "bastard",
+    "asshole",
+    "dickhead",
+    "bullshit",
+    "motherfucker",
+    "wtf",
+    "stfu",
+    "fck",
+    "piss",
+    "cock",
+    "dick",
+    "pussy",
+    "whore",
+    "slut",
+    "tits",
+    "boobs",
+    "jerk",
+    "douche",
+    "douchebag",
+    "dumbass",
+    "jackass",
+    "prick",
+    "f*ck",
+    "s**t",
+    "b*tch",
+    "a$$",
+    "a$$hole",
+    "sh!t",
+    "f**k",
+    "fu*k",
+    "sh*t",
+    "b!tch",
+    "f**king",
+    "f*cking",
+    "fcuk",
+    "fuk",
+    "fuking",
+    "mierda",
+    "puta",
+    "pendejo",
+    "cabrón",
+    "joder",
+    "coño",
+    "scheisse",
+    "scheiße",
+    "putain",
+    "merde",
+    "cazzo",
+    "fottiti",
   ];
 
-  // Sample spam patterns
+  const specialReplacements = {
+    caca: "💩 (poop emoji)",
+  };
+
   const spamPatterns = [
     /buy now/i,
     /limited time offer/i,
@@ -25,7 +73,56 @@ const analyzeContent = (content) => {
     /\b(www|http)/i,
     /\b\d+% off\b/i,
     /click here/i,
+    /\bfree shipping\b/i,
+    /\bbest deal\b/i,
+    /\bact now\b/i,
+    /\bdon't miss out\b/i,
+    /\bdon't wait\b/i,
+    /\bspecial offer\b/i,
+    /\bexclusive deal\b/i,
+    /\bwhile supplies last\b/i,
+    /\blimited stock\b/i,
+    /\bfor a limited time\b/i,
+    /check out my (channel|page|website|profile)/i,
+    /\bfollow me\b/i,
+    /\bcheck out my\b/i,
+    /best (price|deal|offer) guaranteed/i,
+    /\blow prices\b/i,
+    /\bcheap\b/i,
+    /\bbargain\b/i,
+    /\bsave money\b/i,
+    /\bsale ends\b/i,
+    /\bnewsletter\b/i,
+    /\bsubscribe\b/i,
+    /\bonly \$\d+\.\d+\b/i,
+    /\bonly \$\d+\b/i,
+    /\bspecial discount\b/i,
+    /\bcoupon code\b/i,
+    /\bpromo code\b/i,
+    /\bfree gift\b/i,
+    /\bgiveaway\b/i,
+    /\bwin a\b/i,
+    /\bearning potential\b/i,
+    /\bmake money\b/i,
+    /\bonline income\b/i,
+    /\bwork from home\b/i,
+    /\bget rich\b/i,
+    /\bmillionaire\b/i,
+    /\bcasino\b/i,
+    /\bbetting\b/i,
+    /\bgambling\b/i,
+    /\blottery\b/i,
+    /\bviagra\b/i,
+    /\bcialis\b/i,
+    /\bpills\b/i,
+    /\bweight loss\b/i,
+    /\bdiet\b/i,
+    /\bcryptocurrency\b/i,
+    /\bbitcoin\b/i,
+    /\bnft\b/i,
+    /\binvest\b/i,
   ];
+
 
   // Sample harassment patterns
   const harassmentPatterns = [
@@ -33,12 +130,39 @@ const analyzeContent = (content) => {
     /\bshut up\b/i,
     /\bgo away\b/i,
     /hate you/i,
+    /\byou('re| are) (an )?(idiot|moron|stupid|dumb|pathetic|useless|worthless|loser)/i,
+    /\bi hate (you|this)/i,
+    /\bkill yourself\b/i,
+    /\bkys\b/i,
+    /\bdie\b/i,
+    /\bget lost\b/i,
+    /\bf(uc)?k (you|off|yourself)\b/i,
+    /\bgfys\b/i,
+    /\bno one (likes|cares about) you\b/i,
+    /\byou('re| are) (a )?waste of (time|space|air|life)/i,
+    /\b(nobody|no one) asked\b/i,
+    /\byou('re| are) garbage\b/i,
+    /\byou('re| are) trash\b/i,
+    /\byou make me sick\b/i,
+    /\byou disgust me\b/i,
+    /\byou should be ashamed\b/i,
+    /\bshame on you\b/i,
+    /\byou('re| are) (a )?(joke|clown|fool)\b/i,
+    /\byou('re| are) (a )?(nothing|nobody)\b/i,
+    /\byour (mom|mother|dad|father)/i,
+    /\bpeople like you\b/i,
   ];
 
   const issues = [];
   let moderationScore = 0;
+  let modifiedContent = content;
 
-  // Check for profanity
+
+  for (const [word, replacement] of Object.entries(specialReplacements)) {
+    const regex = new RegExp(`\\b${word}\\b`, "gi");
+    modifiedContent = modifiedContent.replace(regex, replacement);
+  }
+
   for (const word of profanityList) {
     const regex = new RegExp(`\\b${word}\\b`, "i");
     if (regex.test(content)) {
@@ -49,7 +173,7 @@ const analyzeContent = (content) => {
         severity: 0.7,
       });
       moderationScore += 0.2;
-      break; // Only report profanity once
+      break; 
     }
   }
 
@@ -67,10 +191,9 @@ const analyzeContent = (content) => {
       explanation: "Your content contains patterns commonly found in spam.",
       severity: 0.6,
     });
-    moderationScore += 0.1 * spamCount;
+    moderationScore += 0.1 * Math.min(spamCount, 5);
   }
 
-  // Check for harassment
   for (const pattern of harassmentPatterns) {
     if (pattern.test(content)) {
       issues.push({
@@ -80,17 +203,17 @@ const analyzeContent = (content) => {
         severity: 0.8,
       });
       moderationScore += 0.3;
-      break; // Only report harassment once
+      break; 
     }
   }
 
-  // Cap score at 1.0
   moderationScore = Math.min(moderationScore, 1.0);
 
   return {
     isFlagged: issues.length > 0,
     moderationScore,
     issues,
+    modifiedContent,
     summary:
       issues.length > 0
         ? "Content flagged for potential policy violations"
@@ -99,7 +222,6 @@ const analyzeContent = (content) => {
 };
 
 const moderationController = {
-  // Middleware to moderate new topics
   moderateNewTopic: async (req, res, next) => {
     try {
       const { content } = req.body;
@@ -144,15 +266,12 @@ const moderationController = {
       next();
     } catch (error) {
       console.error("Error in reply moderation:", error);
-      // Continue to next middleware even if moderation fails
       next();
     }
   },
 
-  // Save moderation record for a topic
   saveModerationForTopic: async (topicId, moderationResult) => {
     try {
-      // Check if you need to save moderation records
       if (!moderationResult.analysis.isFlagged) {
         return null;
       }
@@ -175,11 +294,12 @@ const moderationController = {
     }
   },
 
-  // Save moderation record for a reply
   saveModerationForReply: async (replyId, moderationResult) => {
     try {
-      // Check if you need to save moderation records
-      if (!moderationResult.analysis.isFlagged) {
+      if (
+        !moderationResult.analysis.isFlagged &&
+        !moderationResult.analysis.modifiedContent
+      ) {
         return null;
       }
 
@@ -193,6 +313,17 @@ const moderationController = {
         status: "pending",
       });
 
+      if (
+        moderationResult.analysis.modifiedContent &&
+        moderationResult.analysis.modifiedContent !==
+          moderationResult.originalContent
+      ) {
+        await ForumReply.findByIdAndUpdate(replyId, {
+          content: moderationResult.analysis.modifiedContent,
+          hasSpecialReplacements: true,
+        });
+      }
+
       console.log(`Moderation saved for reply ${replyId}`);
       return true;
     } catch (error) {
@@ -200,13 +331,70 @@ const moderationController = {
       return false;
     }
   },
+  moderateNewTopic: async (req, res, next) => {
+    try {
+      const { content } = req.body;
 
-  // Handle getting pending moderations
+      if (!content) {
+        return next();
+      }
+
+      const analysis = analyzeContent(content);
+
+      req.moderationResult = {
+        analysis,
+        originalContent: content,
+        contentType: "topic",
+      };
+      if (
+        !analysis.isFlagged &&
+        analysis.modifiedContent &&
+        analysis.modifiedContent !== content
+      ) {
+        req.body.content = analysis.modifiedContent;
+        req.specialReplacementsApplied = true;
+      }
+
+      next();
+    } catch (error) {
+      console.error("Error in topic moderation:", error);
+      next();
+    }
+  },
+  moderateNewReply: async (req, res, next) => {
+    try {
+      const { content } = req.body;
+
+      if (!content) {
+        return next();
+      }
+
+      const analysis = analyzeContent(content);
+      req.moderationResult = {
+        analysis,
+        originalContent: content,
+        contentType: "reply",
+      };
+
+      if (
+        !analysis.isFlagged &&
+        analysis.modifiedContent &&
+        analysis.modifiedContent !== content
+      ) {
+        req.body.content = analysis.modifiedContent;
+        req.specialReplacementsApplied = true;
+      }
+      next();
+    } catch (error) {
+      console.error("Error in reply moderation:", error);
+      next();
+    }
+  },
+
   getPendingModerations: async (req, res) => {
     try {
       const pendingItems = await ForumModeration.findPendingReviews();
 
-      // Populate content information
       const populatedItems = await Promise.all(
         pendingItems.map(async (item) => {
           const itemObj = item.toObject();
@@ -255,48 +443,48 @@ const moderationController = {
       moderationEntry.reviewNote = notes || "";
       moderationEntry.reviewedBy = userId;
 
-    let contentUpdate = {};
-    if (modifiedContent) {
-      moderationEntry.suggestedImprovement = modifiedContent;
-      contentUpdate.content = modifiedContent;
-    }
- if (decision === "approved") {
-      contentUpdate.visible = true;
-      contentUpdate.pendingModeration = false;
-      contentUpdate.moderationStatus = "approved";
-    } else if (decision === "rejected") {
-      contentUpdate.visible = false;
-      contentUpdate.pendingModeration = false;
-      contentUpdate.moderationStatus = "rejected";
-    } else if (decision === "modified") {
-      contentUpdate.visible = true;
-      contentUpdate.pendingModeration = false;
-      contentUpdate.moderationStatus = "approved";
-    }
+      let contentUpdate = {};
+      if (modifiedContent) {
+        moderationEntry.suggestedImprovement = modifiedContent;
+        contentUpdate.content = modifiedContent;
+      }
+      if (decision === "approved") {
+        contentUpdate.visible = true;
+        contentUpdate.pendingModeration = false;
+        contentUpdate.moderationStatus = "approved";
+      } else if (decision === "rejected") {
+        contentUpdate.visible = false;
+        contentUpdate.pendingModeration = false;
+        contentUpdate.moderationStatus = "rejected";
+      } else if (decision === "modified") {
+        contentUpdate.visible = true;
+        contentUpdate.pendingModeration = false;
+        contentUpdate.moderationStatus = "approved";
+      }
 
-    if (moderationEntry.contentType === "topic") {
-      await ForumTopic.findByIdAndUpdate(
-        moderationEntry.contentId,
-        contentUpdate
-      );
-    } else if (moderationEntry.contentType === "reply") {
-      await ForumReply.findByIdAndUpdate(
-        moderationEntry.contentId,
-        contentUpdate
-      );
+      if (moderationEntry.contentType === "topic") {
+        await ForumTopic.findByIdAndUpdate(
+          moderationEntry.contentId,
+          contentUpdate
+        );
+      } else if (moderationEntry.contentType === "reply") {
+        await ForumReply.findByIdAndUpdate(
+          moderationEntry.contentId,
+          contentUpdate
+        );
+      }
+
+      await moderationEntry.save();
+
+      res.status(200).json({
+        message: "Moderation decision processed",
+        decision,
+      });
+    } catch (error) {
+      console.error("Error processing moderation decision:", error);
+      res.status(500).json({ message: "Error processing moderation decision" });
     }
-
-    await moderationEntry.save();
-
-    res.status(200).json({
-      message: "Moderation decision processed",
-      decision,
-    });
-  } catch (error) {
-    console.error("Error processing moderation decision:", error);
-    res.status(500).json({ message: "Error processing moderation decision" });
-  }
-},
+  },
 
   getContentImprovement: async (req, res) => {
     try {

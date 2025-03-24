@@ -39,6 +39,10 @@ const forumReplySchema = new Schema(
       enum: ["pending", "approved", "rejected", "none"],
       default: "none",
     },
+    hasSpecialReplacements: {
+      type: Boolean,
+      default: false,
+    }
   },
   {
     timestamps: true,
