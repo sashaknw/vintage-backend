@@ -563,6 +563,8 @@ router.delete("/replies/:replyId", isAuthenticated, async (req, res, next) => {
     const { replyId } = req.params;
     const userId = req.payload._id;
 
+        console.log(`Attempting to delete reply ${replyId} by user ${userId}`);
+
     const reply = await ForumReply.findById(replyId);
     if (!reply) {
       return res.status(404).json({ message: "Reply not found" });
@@ -576,8 +578,12 @@ router.delete("/replies/:replyId", isAuthenticated, async (req, res, next) => {
         message: "You don't have permission to delete this reply",
       });
     }
+    const deleteResult = await ForumReply.findByIdAndDelete(replyId);
+    console.log(
+      `Delete result for reply ${replyId}:`,
+      deleteResult ? "Success" : "Failed"
+    );
 
-    await ForumReply.findByIdAndDelete(replyId);
 
     // activity timestamp
     const topic = await ForumTopic.findById(reply.topic);

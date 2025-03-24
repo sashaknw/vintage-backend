@@ -241,12 +241,10 @@ const moderationController = {
       next();
     } catch (error) {
       console.error("Error in topic moderation:", error);
-      // Continue to next middleware even if moderation fails
       next();
     }
   },
 
-  // Middleware to moderate new replies
   moderateNewReply: async (req, res, next) => {
     try {
       const { content } = req.body;
