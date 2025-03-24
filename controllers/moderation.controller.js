@@ -63,7 +63,7 @@ const analyzeContent = (content) => {
   ];
 
   const specialReplacements = {
-    caca: "💩 (poop emoji)",
+    caca: "💩",
   };
 
   const spamPatterns = [
@@ -428,63 +428,93 @@ const moderationController = {
     }
   },
 
-  processModerationDecision: async (req, res) => {
-    try {
-      const { moderationId } = req.params;
-      const { decision, notes, modifiedContent } = req.body;
-      const userId = req.payload._id;
 
-      const moderationEntry = await ForumModeration.findById(moderationId);
-      if (!moderationEntry) {
-        return res.status(404).json({ message: "Moderation entry not found" });
-      }
+processModerationDecision: async (req, res) => {
+  try {
+    const { moderationId } = req.params;
+    const { decision, notes, modifiedContent } = req.body;
+    const userId = req.payload._id;
 
-      moderationEntry.status = decision;
-      moderationEntry.reviewNote = notes || "";
-      moderationEntry.reviewedBy = userId;
-
-      let contentUpdate = {};
-      if (modifiedContent) {
-        moderationEntry.suggestedImprovement = modifiedContent;
-        contentUpdate.content = modifiedContent;
-      }
-      if (decision === "approved") {
-        contentUpdate.visible = true;
-        contentUpdate.pendingModeration = false;
-        contentUpdate.moderationStatus = "approved";
-      } else if (decision === "rejected") {
-        contentUpdate.visible = false;
-        contentUpdate.pendingModeration = false;
-        contentUpdate.moderationStatus = "rejected";
-      } else if (decision === "modified") {
-        contentUpdate.visible = true;
-        contentUpdate.pendingModeration = false;
-        contentUpdate.moderationStatus = "approved";
-      }
-
-      if (moderationEntry.contentType === "topic") {
-        await ForumTopic.findByIdAndUpdate(
-          moderationEntry.contentId,
-          contentUpdate
-        );
-      } else if (moderationEntry.contentType === "reply") {
-        await ForumReply.findByIdAndUpdate(
-          moderationEntry.contentId,
-          contentUpdate
-        );
-      }
-
-      await moderationEntry.save();
-
-      res.status(200).json({
-        message: "Moderation decision processed",
-        decision,
-      });
-    } catch (error) {
-      console.error("Error processing moderation decision:", error);
-      res.status(500).json({ message: "Error processing moderation decision" });
+    const moderationEntry = await ForumModeration.findById(moderationId);
+    if (!moderationEntry) {
+      return res.status(404).json({ message: "Moderation entry not found" });
     }
-  },
+
+    moderationEntry.status = decision;
+    moderationEntry.reviewNote = notes || "";
+    moderationEntry.reviewedBy = userId;
+
+    let contentUpdate = {};
+    
+    if (modifiedContent) {
+      moderationEntry.suggestedImprovement = modifiedContent;
+      contentUpdate.content = modifiedContent;
+    }
+
+    if (decision === "approved") {
+      contentUpdate.visible = true;
+      contentUpdate.pendingModeration = false;
+      contentUpdate.moderationStatus = "approved";
+    } 
+    else if (decision === "rejected") {
+      contentUpdate.visible = false;
+      contentUpdate.pendingModeration = false;
+      contentUpdate.moderationStatus = "rejected";
+    } 
+    else if (decision === "modified") {
+     
+      contentUpdate.visible = true;
+      contentUpdate.pendingModeration = false;
+      contentUpdate.moderationStatus = "approved";
+      
+      if (!modifiedContent) {
+        return res.status(400).json({ 
+          message: "Modified content is required for 'modified' decision" 
+        });
+      }
+    }
+
+    let contentModel, updatedContent;
+    if (moderationEntry.contentType === "topic") {
+      updatedContent = await ForumTopic.findByIdAndUpdate(
+        moderationEntry.contentId,
+        contentUpdate,
+        { new: true }
+      );
+      contentModel = ForumTopic;
+    } else if (moderationEntry.contentType === "reply") {
+      updatedContent = await ForumReply.findByIdAndUpdate(
+        moderationEntry.contentId,
+        contentUpdate,
+        { new: true }
+      );
+      contentModel = ForumReply;
+    }
+
+    console.log(`Content ${moderationEntry.contentId} updated with decision: ${decision}`);
+    console.log("Content updates applied:", contentUpdate);
+    
+    await moderationEntry.save();
+
+    const verifyContent = await contentModel.findById(moderationEntry.contentId);
+    if (!verifyContent) {
+      console.error("Could not verify content update - content not found");
+    } else {
+      console.log("Content verification - visible:", verifyContent.visible);
+      console.log("Content verification - status:", verifyContent.moderationStatus);
+    }
+
+    res.status(200).json({
+      message: "Moderation decision processed",
+      decision,
+      contentId: moderationEntry.contentId,
+      updatedContent: verifyContent || null
+    });
+  } catch (error) {
+    console.error("Error processing moderation decision:", error);
+    res.status(500).json({ message: "Error processing moderation decision" });
+  }
+},
 
   getContentImprovement: async (req, res) => {
     try {
@@ -495,10 +525,8 @@ const moderationController = {
         return res.status(404).json({ message: "Moderation entry not found" });
       }
 
-      // Create a simple improvement suggestion based on issues
       let suggestedImprovement = moderationEntry.originalContent;
 
-      // Basic improvements based on issue types
       if (moderationEntry.issues.some((issue) => issue.type === "profanity")) {
         suggestedImprovement = suggestedImprovement
           .replace(/shit/gi, "****")
@@ -511,7 +539,6 @@ const moderationController = {
       }
 
       if (moderationEntry.issues.some((issue) => issue.type === "spam")) {
-        // Remove excessive URLs and typical spam patterns
         suggestedImprovement = suggestedImprovement
           .replace(/\b(www|http)[^\s]+/gi, "[link removed]")
           .replace(/\b\d+% off\b/gi, "discount")
@@ -519,14 +546,12 @@ const moderationController = {
           .replace(/limited time offer/gi, "available for a limited period");
       }
 
-      // For harassment, rewrite the whole thing in a more neutral tone
       if (moderationEntry.issues.some((issue) => issue.type === "harassment")) {
         suggestedImprovement =
           "I'd like to express my disagreement in a respectful way. " +
           "I understand you may have a different perspective, and I'd appreciate further discussion.";
       }
 
-      // Store the suggestion
       moderationEntry.suggestedImprovement = suggestedImprovement;
       await moderationEntry.save();
 
@@ -545,7 +570,6 @@ const moderationController = {
 
   getModerationReport: async (req, res) => {
     try {
-      // Get basic statistics
       const totalCount = await ForumModeration.countDocuments();
       const pendingCount = await ForumModeration.countDocuments({
         status: "pending",
@@ -600,11 +624,9 @@ ${issues
 
   getModerationSettings: async (req, res) => {
     try {
-      // Get settings from database, creating default settings if none exist
       let settings = await ModerationSettings.findOne();
 
       if (!settings) {
-        // Create default settings if none exist
         settings = await ModerationSettings.create({
           enabled: true,
           autoModerateSafe: true,
@@ -624,7 +646,6 @@ ${issues
     try {
       const newSettings = req.body;
 
-      // Validate settings
       if (newSettings.toxicityThreshold !== undefined) {
         if (
           newSettings.toxicityThreshold < 0 ||
@@ -636,7 +657,6 @@ ${issues
         }
       }
 
-      // Get current settings or create if they don't exist
       let settings = await ModerationSettings.findOne();
 
       if (!settings) {
@@ -644,9 +664,8 @@ ${issues
           ...newSettings,
         });
       } else {
-        // Update existing settings
         settings = await ModerationSettings.findOneAndUpdate(
-          {}, // Find the first document (we only have one settings document)
+          {},
           { $set: newSettings },
           { new: true }
         );
