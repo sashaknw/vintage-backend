@@ -5,9 +5,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
-/**
- * Service for interacting with Google's Gemini API for content moderation
- */
+console.log("Gemini API Key present:", !!process.env.GEMINI_API_KEY);
 class GeminiService {
   /**
    * Analyze forum content for potential moderation issues
@@ -17,7 +15,6 @@ class GeminiService {
    */
   async moderateContent(content, contentType = "topic") {
     try {
-      // Create the prompt for content moderation
       const prompt = `
       You are VintageVaultMod, an AI forum moderator for a vintage fashion community platform called "Vintage Vault".
       You need to analyze the following ${contentType} content for potential moderation issues.
@@ -57,7 +54,6 @@ class GeminiService {
       Keep the analysis fashion community-specific. Be lenient on fashion terminology but strict on harassment.
       Do not include any other text outside the JSON object.`;
 
-      // call Gemini API
       const response = await axios.post(
         `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
         {
@@ -79,7 +75,6 @@ class GeminiService {
         }
       );
 
-      // extract JSON from response
       const responseText = response.data.candidates[0].content.parts[0].text;
       const jsonStart = responseText.indexOf("{");
       const jsonEnd = responseText.lastIndexOf("}") + 1;
@@ -128,7 +123,7 @@ class GeminiService {
       
       Please rewrite the content to fix these issues while preserving the user's original intent.
       Make minimal changes necessary to comply with community guidelines.
-      Be fashion-specific, or fashion-community-event spacific, and keep the vintage fashion terminology intact.
+      Be fashion-specific, or fashion-community-event specific, and keep the vintage fashion terminology intact.
       Focus on fixing only the problematic parts.
       
       Return ONLY the improved content without any explanations or additional text.`;
