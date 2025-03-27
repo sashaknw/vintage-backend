@@ -2,208 +2,211 @@ const ForumModeration = require("../models/ForumModeration.model");
 const ForumTopic = require("../models/ForumTopic.model");
 const ForumReply = require("../models/ForumReply.model");
 const ModerationSettings = require("../models/ModerationSettings.model");
+const ModerationData = require("../models/ModerationData.model");
 
-const analyzeContent = (content) => {
-  const profanityList = [
-    "shit",
-    "fuck",
-    "damn",
-    "crap",
-    "ass",
-    "bitch",
-    "bastard",
-    "asshole",
-    "dickhead",
-    "bullshit",
-    "motherfucker",
-    "wtf",
-    "stfu",
-    "fck",
-    "piss",
-    "cock",
-    "dick",
-    "pussy",
-    "whore",
-    "slut",
-    "tits",
-    "boobs",
-    "jerk",
-    "douche",
-    "douchebag",
-    "dumbass",
-    "jackass",
-    "prick",
-    "f*ck",
-    "s**t",
-    "b*tch",
-    "a$$",
-    "a$$hole",
-    "sh!t",
-    "f**k",
-    "fu*k",
-    "sh*t",
-    "b!tch",
-    "f**king",
-    "f*cking",
-    "fcuk",
-    "fuk",
-    "fuking",
-    "mierda",
-    "puta",
-    "pendejo",
-    "cabrón",
-    "joder",
-    "coño",
-    "scheisse",
-    "scheiße",
-    "putain",
-    "merde",
-    "cazzo",
-    "fottiti",
-  ];
+// cache for moderation to avoid repeated database calls
+let moderationCache = {
+  profanity: null,
+  spam: null,
+  highPrioritySpam: null,
+  harassment: null,
+  specialReplacements: null,
+  lastUpdated: null,
+};
 
-  const specialReplacements = {
-    caca: "💩",
-  };
+// refresh the moderation cache
+const refreshModerationCache = async () => {
+  try {
+    //  refresh if cache is empty or older than 1 hour
+    const currentTime = new Date();
+    if (
+      moderationCache.lastUpdated &&
+      currentTime - moderationCache.lastUpdated < 3600000
+    ) {
+      return;
+    }
 
-  const spamPatterns = [
-    /buy now/i,
-    /limited time offer/i,
-    /discount/i,
-    /\b(www|http)/i,
-    /\b\d+% off\b/i,
-    /click here/i,
-    /\bfree shipping\b/i,
-    /\bbest deal\b/i,
-    /\bact now\b/i,
-    /\bdon't miss out\b/i,
-    /\bdon't wait\b/i,
-    /\bspecial offer\b/i,
-    /\bexclusive deal\b/i,
-    /\bwhile supplies last\b/i,
-    /\blimited stock\b/i,
-    /\bfor a limited time\b/i,
-    /check out my (channel|page|website|profile)/i,
-    /\bfollow me\b/i,
-    /\bcheck out my\b/i,
-    /best (price|deal|offer) guaranteed/i,
-    /\blow prices\b/i,
-    /\bcheap\b/i,
-    /\bbargain\b/i,
-    /\bsave money\b/i,
-    /\bsale ends\b/i,
-    /\bnewsletter\b/i,
-    /\bsubscribe\b/i,
-    /\bonly \$\d+\.\d+\b/i,
-    /\bonly \$\d+\b/i,
-    /\bspecial discount\b/i,
-    /\bcoupon code\b/i,
-    /\bpromo code\b/i,
-    /\bfree gift\b/i,
-    /\bgiveaway\b/i,
-    /\bwin a\b/i,
-    /\bearning potential\b/i,
-    /\bmake money\b/i,
-    /\bonline income\b/i,
-    /\bwork from home\b/i,
-    /\bget rich\b/i,
-    /\bmillionaire\b/i,
-    /\bcasino\b/i,
-    /\bbetting\b/i,
-    /\bgambling\b/i,
-    /\blottery\b/i,
-    /\bviagra\b/i,
-    /\bcialis\b/i,
-    /\bpills\b/i,
-    /\bweight loss\b/i,
-    /\bdiet\b/i,
-    /\bcryptocurrency\b/i,
-    /\bbitcoin\b/i,
-    /\bnft\b/i,
-    /\binvest\b/i,
-  ];
+    const allModerationData = await ModerationData.find();
 
+    // agrupar by type
+    moderationCache.profanity = allModerationData
+      .filter((item) => item.type === "profanity")
+      .map((item) => ({
+        patterns: item.patterns,
+        severity: item.severity,
+        isRegex: item.isRegex,
+      }));
 
-  // Sample harassment patterns
-  const harassmentPatterns = [
-    /\byou are (stupid|dumb|idiot)/i,
-    /\bshut up\b/i,
-    /\bgo away\b/i,
-    /hate you/i,
-    /\byou('re| are) (an )?(idiot|moron|stupid|dumb|pathetic|useless|worthless|loser)/i,
-    /\bi hate (you|this)/i,
-    /\bkill yourself\b/i,
-    /\bkys\b/i,
-    /\bdie\b/i,
-    /\bget lost\b/i,
-    /\bf(uc)?k (you|off|yourself)\b/i,
-    /\bgfys\b/i,
-    /\bno one (likes|cares about) you\b/i,
-    /\byou('re| are) (a )?waste of (time|space|air|life)/i,
-    /\b(nobody|no one) asked\b/i,
-    /\byou('re| are) garbage\b/i,
-    /\byou('re| are) trash\b/i,
-    /\byou make me sick\b/i,
-    /\byou disgust me\b/i,
-    /\byou should be ashamed\b/i,
-    /\bshame on you\b/i,
-    /\byou('re| are) (a )?(joke|clown|fool)\b/i,
-    /\byou('re| are) (a )?(nothing|nobody)\b/i,
-    /\byour (mom|mother|dad|father)/i,
-    /\bpeople like you\b/i,
-  ];
+    moderationCache.spam = allModerationData
+      .filter((item) => item.type === "spam" && item.severity < 0.8)
+      .map((item) => ({
+        patterns: item.patterns,
+        severity: item.severity,
+        isRegex: item.isRegex,
+      }));
+
+    moderationCache.highPrioritySpam = allModerationData
+      .filter((item) => item.type === "spam" && item.severity >= 0.8)
+      .map((item) => ({
+        patterns: item.patterns,
+        severity: item.severity,
+        isRegex: item.isRegex,
+      }));
+
+    moderationCache.harassment = allModerationData
+      .filter((item) => item.type === "harassment")
+      .map((item) => ({
+        patterns: item.patterns,
+        severity: item.severity,
+        isRegex: item.isRegex,
+      }));
+
+    moderationCache.specialReplacements = allModerationData
+      .filter((item) => item.type === "special_replacement")
+      .map((item) => ({
+        patterns: item.patterns,
+        replacementValue: item.replacementValue,
+        isRegex: item.isRegex,
+      }));
+
+    moderationCache.lastUpdated = currentTime;
+    console.log("Moderation cache refreshed");
+  } catch (error) {
+    console.error("Error refreshing moderation cache:", error);
+  }
+};
+
+const analyzeContent = async (content) => {
+  //latest moderation data
+  await refreshModerationCache();
 
   const issues = [];
   let moderationScore = 0;
   let modifiedContent = content;
 
-
-  for (const [word, replacement] of Object.entries(specialReplacements)) {
-    const regex = new RegExp(`\\b${word}\\b`, "gi");
-    modifiedContent = modifiedContent.replace(regex, replacement);
-  }
-
-  for (const word of profanityList) {
-    const regex = new RegExp(`\\b${word}\\b`, "i");
-    if (regex.test(content)) {
-      issues.push({
-        type: "profanity",
-        explanation:
-          "Your content contains language that may be considered inappropriate.",
-        severity: 0.7,
-      });
-      moderationScore += 0.2;
-      break; 
+  // special replacements first
+  if (moderationCache.specialReplacements) {
+    for (const replacement of moderationCache.specialReplacements) {
+      for (const pattern of replacement.patterns) {
+        if (replacement.isRegex) {
+          const regex = new RegExp(pattern, "gi");
+          modifiedContent = modifiedContent.replace(
+            regex,
+            replacement.replacementValue
+          );
+        } else {
+          const regex = new RegExp(`\\b${pattern}\\b`, "gi");
+          modifiedContent = modifiedContent.replace(
+            regex,
+            replacement.replacementValue
+          );
+        }
+      }
     }
   }
 
-  // Check for spam patterns
-  let spamCount = 0;
-  for (const pattern of spamPatterns) {
-    if (pattern.test(content)) {
-      spamCount++;
+  // check profanity
+  if (moderationCache.profanity) {
+    for (const profanityGroup of moderationCache.profanity) {
+      let profanityFound = false;
+
+      for (const word of profanityGroup.patterns) {
+        const regex = new RegExp(`\\b${word}\\b`, "i");
+        if (regex.test(content)) {
+          profanityFound = true;
+          break;
+        }
+      }
+
+      if (profanityFound) {
+        issues.push({
+          type: "profanity",
+          explanation:
+            "Your content contains language that may be considered inappropriate.",
+          severity: profanityGroup.severity || 0.7,
+        });
+        moderationScore += 0.2;
+        break;
+      }
     }
   }
 
-  if (spamCount >= 2) {
-    issues.push({
-      type: "spam",
-      explanation: "Your content contains patterns commonly found in spam.",
-      severity: 0.6,
-    });
-    moderationScore += 0.1 * Math.min(spamCount, 5);
+  // high-priority spam patterns 
+  if (moderationCache.highPrioritySpam) {
+    for (const spamGroup of moderationCache.highPrioritySpam) {
+      let highPrioritySpamFound = false;
+
+      for (const pattern of spamGroup.patterns) {
+        const regex = new RegExp(pattern, "i");
+        if (regex.test(content)) {
+          highPrioritySpamFound = true;
+          break;
+        }
+      }
+
+      if (highPrioritySpamFound) {
+        issues.push({
+          type: "spam",
+          explanation:
+            "Your content contains patterns commonly found in spam or promotional content.",
+          severity: spamGroup.severity || 0.9,
+        });
+        moderationScore += 0.4;
+        break;
+      }
+    }
   }
 
-  for (const pattern of harassmentPatterns) {
-    if (pattern.test(content)) {
+  // spam patterns 
+  if (moderationCache.spam) {
+    let spamCount = 0;
+    let spamSeverity = 0;
+
+    for (const spamGroup of moderationCache.spam) {
+      for (const pattern of spamGroup.patterns) {
+        const regex = spamGroup.isRegex
+          ? new RegExp(pattern, "i")
+          : new RegExp(`\\b${pattern}\\b`, "i");
+        if (regex.test(content)) {
+          spamCount++;
+          spamSeverity = Math.max(spamSeverity, spamGroup.severity || 0.6);
+        }
+      }
+    }
+
+    if (spamCount >= 2) {
       issues.push({
-        type: "harassment",
-        explanation:
-          "Your content contains language that may be considered hostile or harassing.",
-        severity: 0.8,
+        type: "spam",
+        explanation: "Your content contains patterns commonly found in spam.",
+        severity: spamSeverity,
       });
-      moderationScore += 0.3;
-      break; 
+      moderationScore += 0.1 * Math.min(spamCount, 5);
+    }
+  }
+
+  // harassment patterns
+  if (moderationCache.harassment) {
+    for (const harassmentGroup of moderationCache.harassment) {
+      let harassmentFound = false;
+
+      for (const pattern of harassmentGroup.patterns) {
+        const regex = new RegExp(pattern, "i");
+        if (regex.test(content)) {
+          harassmentFound = true;
+          break;
+        }
+      }
+
+      if (harassmentFound) {
+        issues.push({
+          type: "harassment",
+          explanation:
+            "Your content contains language that may be considered hostile or harassing.",
+          severity: harassmentGroup.severity || 0.8,
+        });
+        moderationScore += 0.3;
+        break;
+      }
     }
   }
 
@@ -230,13 +233,22 @@ const moderationController = {
         return next();
       }
 
-      const analysis = analyzeContent(content);
+      const analysis = await analyzeContent(content);
 
       req.moderationResult = {
         analysis,
         originalContent: content,
         contentType: "topic",
       };
+
+      if (
+        !analysis.isFlagged &&
+        analysis.modifiedContent &&
+        analysis.modifiedContent !== content
+      ) {
+        req.body.content = analysis.modifiedContent;
+        req.specialReplacementsApplied = true;
+      }
 
       next();
     } catch (error) {
@@ -253,14 +265,21 @@ const moderationController = {
         return next();
       }
 
-      const analysis = analyzeContent(content);
-
+      const analysis = await analyzeContent(content);
       req.moderationResult = {
         analysis,
         originalContent: content,
         contentType: "reply",
       };
 
+      if (
+        !analysis.isFlagged &&
+        analysis.modifiedContent &&
+        analysis.modifiedContent !== content
+      ) {
+        req.body.content = analysis.modifiedContent;
+        req.specialReplacementsApplied = true;
+      }
       next();
     } catch (error) {
       console.error("Error in reply moderation:", error);
@@ -329,65 +348,6 @@ const moderationController = {
       return false;
     }
   },
-  moderateNewTopic: async (req, res, next) => {
-    try {
-      const { content } = req.body;
-
-      if (!content) {
-        return next();
-      }
-
-      const analysis = analyzeContent(content);
-
-      req.moderationResult = {
-        analysis,
-        originalContent: content,
-        contentType: "topic",
-      };
-      if (
-        !analysis.isFlagged &&
-        analysis.modifiedContent &&
-        analysis.modifiedContent !== content
-      ) {
-        req.body.content = analysis.modifiedContent;
-        req.specialReplacementsApplied = true;
-      }
-
-      next();
-    } catch (error) {
-      console.error("Error in topic moderation:", error);
-      next();
-    }
-  },
-  moderateNewReply: async (req, res, next) => {
-    try {
-      const { content } = req.body;
-
-      if (!content) {
-        return next();
-      }
-
-      const analysis = analyzeContent(content);
-      req.moderationResult = {
-        analysis,
-        originalContent: content,
-        contentType: "reply",
-      };
-
-      if (
-        !analysis.isFlagged &&
-        analysis.modifiedContent &&
-        analysis.modifiedContent !== content
-      ) {
-        req.body.content = analysis.modifiedContent;
-        req.specialReplacementsApplied = true;
-      }
-      next();
-    } catch (error) {
-      console.error("Error in reply moderation:", error);
-      next();
-    }
-  },
 
   getPendingModerations: async (req, res) => {
     try {
@@ -426,93 +386,96 @@ const moderationController = {
     }
   },
 
+  processModerationDecision: async (req, res) => {
+    try {
+      const { moderationId } = req.params;
+      const { decision, notes, modifiedContent } = req.body;
+      const userId = req.payload._id;
 
-processModerationDecision: async (req, res) => {
-  try {
-    const { moderationId } = req.params;
-    const { decision, notes, modifiedContent } = req.body;
-    const userId = req.payload._id;
-
-    const moderationEntry = await ForumModeration.findById(moderationId);
-    if (!moderationEntry) {
-      return res.status(404).json({ message: "Moderation entry not found" });
-    }
-
-    moderationEntry.status = decision;
-    moderationEntry.reviewNote = notes || "";
-    moderationEntry.reviewedBy = userId;
-
-    let contentUpdate = {};
-    
-    if (modifiedContent) {
-      moderationEntry.suggestedImprovement = modifiedContent;
-      contentUpdate.content = modifiedContent;
-    }
-
-    if (decision === "approved") {
-      contentUpdate.visible = true;
-      contentUpdate.pendingModeration = false;
-      contentUpdate.moderationStatus = "approved";
-    } 
-    else if (decision === "rejected") {
-      contentUpdate.visible = false;
-      contentUpdate.pendingModeration = false;
-      contentUpdate.moderationStatus = "rejected";
-    } 
-    else if (decision === "modified") {
-     
-      contentUpdate.visible = true;
-      contentUpdate.pendingModeration = false;
-      contentUpdate.moderationStatus = "approved";
-      
-      if (!modifiedContent) {
-        return res.status(400).json({ 
-          message: "Modified content is required for 'modified' decision" 
-        });
+      const moderationEntry = await ForumModeration.findById(moderationId);
+      if (!moderationEntry) {
+        return res.status(404).json({ message: "Moderation entry not found" });
       }
-    }
 
-    let contentModel, updatedContent;
-    if (moderationEntry.contentType === "topic") {
-      updatedContent = await ForumTopic.findByIdAndUpdate(
-        moderationEntry.contentId,
-        contentUpdate,
-        { new: true }
+      moderationEntry.status = decision;
+      moderationEntry.reviewNote = notes || "";
+      moderationEntry.reviewedBy = userId;
+
+      let contentUpdate = {};
+
+      if (modifiedContent) {
+        moderationEntry.suggestedImprovement = modifiedContent;
+        contentUpdate.content = modifiedContent;
+      }
+
+      if (decision === "approved") {
+        contentUpdate.visible = true;
+        contentUpdate.pendingModeration = false;
+        contentUpdate.moderationStatus = "approved";
+      } else if (decision === "rejected") {
+        contentUpdate.visible = false;
+        contentUpdate.pendingModeration = false;
+        contentUpdate.moderationStatus = "rejected";
+      } else if (decision === "modified") {
+        contentUpdate.visible = true;
+        contentUpdate.pendingModeration = false;
+        contentUpdate.moderationStatus = "approved";
+
+        if (!modifiedContent) {
+          return res.status(400).json({
+            message: "Modified content is required for 'modified' decision",
+          });
+        }
+      }
+
+      let contentModel, updatedContent;
+      if (moderationEntry.contentType === "topic") {
+        updatedContent = await ForumTopic.findByIdAndUpdate(
+          moderationEntry.contentId,
+          contentUpdate,
+          { new: true }
+        );
+        contentModel = ForumTopic;
+      } else if (moderationEntry.contentType === "reply") {
+        updatedContent = await ForumReply.findByIdAndUpdate(
+          moderationEntry.contentId,
+          contentUpdate,
+          { new: true }
+        );
+        contentModel = ForumReply;
+      }
+
+      console.log(
+        `Content ${moderationEntry.contentId} updated with decision: ${decision}`
       );
-      contentModel = ForumTopic;
-    } else if (moderationEntry.contentType === "reply") {
-      updatedContent = await ForumReply.findByIdAndUpdate(
-        moderationEntry.contentId,
-        contentUpdate,
-        { new: true }
+      console.log("Content updates applied:", contentUpdate);
+
+      await moderationEntry.save();
+
+      const verifyContent = await contentModel.findById(
+        moderationEntry.contentId
       );
-      contentModel = ForumReply;
+      if (!verifyContent) {
+        console.error("Could not verify content update - content not found");
+      } else {
+        console.log("Content verification - visible:", verifyContent.visible);
+        console.log(
+          "Content verification - status:",
+          verifyContent.moderationStatus
+        );
+      }
+
+      res.status(200).json({
+        message: "Moderation decision processed",
+        decision,
+        contentId: moderationEntry.contentId,
+        updatedContent: verifyContent || null,
+      });
+    } catch (error) {
+      console.error("Error processing moderation decision:", error);
+      res.status(500).json({ message: "Error processing moderation decision" });
     }
-
-    console.log(`Content ${moderationEntry.contentId} updated with decision: ${decision}`);
-    console.log("Content updates applied:", contentUpdate);
-    
-    await moderationEntry.save();
-
-    const verifyContent = await contentModel.findById(moderationEntry.contentId);
-    if (!verifyContent) {
-      console.error("Could not verify content update - content not found");
-    } else {
-      console.log("Content verification - visible:", verifyContent.visible);
-      console.log("Content verification - status:", verifyContent.moderationStatus);
-    }
-
-    res.status(200).json({
-      message: "Moderation decision processed",
-      decision,
-      contentId: moderationEntry.contentId,
-      updatedContent: verifyContent || null
-    });
-  } catch (error) {
-    console.error("Error processing moderation decision:", error);
-    res.status(500).json({ message: "Error processing moderation decision" });
-  }
-},
+  },
 
   getContentImprovement: async (req, res) => {
     try {
@@ -523,19 +486,54 @@ processModerationDecision: async (req, res) => {
         return res.status(404).json({ message: "Moderation entry not found" });
       }
 
-      let suggestedImprovement = moderationEntry.originalContent;
-
-      if (moderationEntry.issues.some((issue) => issue.type === "profanity")) {
-        suggestedImprovement = suggestedImprovement
-          .replace(/shit/gi, "****")
-          .replace(/fuck/gi, "****")
-          .replace(/damn/gi, "****")
-          .replace(/crap/gi, "****")
-          .replace(/ass\b/gi, "***")
-          .replace(/bitch/gi, "*****")
-          .replace(/bastard/gi, "*******");
+      if (moderationEntry.suggestedImprovement) {
+        return res.status(200).json({
+          data: {
+            suggestedImprovement: moderationEntry.suggestedImprovement,
+          },
+        });
       }
 
+      let suggestedImprovement = moderationEntry.originalContent;
+      await refreshModerationCache();
+
+      //  profanity
+      if (moderationEntry.issues.some((issue) => issue.type === "profanity")) {
+        if (moderationCache.profanity) {
+          for (const profanityGroup of moderationCache.profanity) {
+            for (const word of profanityGroup.patterns) {
+              const regex = new RegExp(`\\b${word}\\b`, "gi");
+              suggestedImprovement = suggestedImprovement.replace(
+                regex,
+                "*".repeat(word.length)
+              );
+            }
+          }
+        }
+
+        // replacements
+        if (moderationCache.specialReplacements) {
+          for (const replacement of moderationCache.specialReplacements) {
+            for (const pattern of replacement.patterns) {
+              if (replacement.isRegex) {
+                const regex = new RegExp(pattern, "gi");
+                suggestedImprovement = suggestedImprovement.replace(
+                  regex,
+                  replacement.replacementValue
+                );
+              } else {
+                const regex = new RegExp(`\\b${pattern}\\b`, "gi");
+                suggestedImprovement = suggestedImprovement.replace(
+                  regex,
+                  replacement.replacementValue
+                );
+              }
+            }
+          }
+        }
+      }
+
+      //  spam
       if (moderationEntry.issues.some((issue) => issue.type === "spam")) {
         suggestedImprovement = suggestedImprovement
           .replace(/\b(www|http)[^\s]+/gi, "[link removed]")
@@ -544,6 +542,7 @@ processModerationDecision: async (req, res) => {
           .replace(/limited time offer/gi, "available for a limited period");
       }
 
+      //  harassment
       if (moderationEntry.issues.some((issue) => issue.type === "harassment")) {
         suggestedImprovement =
           "I'd like to express my disagreement in a respectful way. " +
@@ -617,6 +616,19 @@ ${issues
     } catch (error) {
       console.error("Error generating moderation report:", error);
       res.status(500).json({ message: "Error generating moderation report" });
+    }
+  },
+
+  refreshModerationCache: async (req, res) => {
+    try {
+      await refreshModerationCache();
+      res.status(200).json({
+        message: "Moderation cache refreshed successfully",
+        timestamp: moderationCache.lastUpdated,
+      });
+    } catch (error) {
+      console.error("Error refreshing moderation cache:", error);
+      res.status(500).json({ message: "Error refreshing moderation cache" });
     }
   },
 

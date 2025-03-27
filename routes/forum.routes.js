@@ -54,6 +54,7 @@ router.get("/categories/:categoryId", async (req, res, next) => {
       topics.map(async (topic) => {
         const replyCount = await ForumReply.countDocuments({
           topic: topic._id,
+          visible: true 
         });
         return {
           ...topic,
@@ -558,12 +559,14 @@ router.post(
 
 
 // DELETE  reply
+
+
 router.delete("/replies/:replyId", isAuthenticated, async (req, res, next) => {
   try {
     const { replyId } = req.params;
     const userId = req.payload._id;
 
-        console.log(`Attempting to delete reply ${replyId} by user ${userId}`);
+    console.log(`Attempting to delete reply ${replyId} by user ${userId}`);
 
     const reply = await ForumReply.findById(replyId);
     if (!reply) {
@@ -578,25 +581,25 @@ router.delete("/replies/:replyId", isAuthenticated, async (req, res, next) => {
         message: "You don't have permission to delete this reply",
       });
     }
-    const deleteResult = await ForumReply.findByIdAndDelete(replyId);
-    console.log(
-      `Delete result for reply ${replyId}:`,
-      deleteResult ? "Success" : "Failed"
-    );
 
+    
+    await ForumReply.findByIdAndUpdate(replyId, { visible: false });
+    
+    console.log(`Reply ${replyId} marked as not visible`);
 
-    // activity timestamp
     const topic = await ForumTopic.findById(reply.topic);
     if (topic) {
-      const latestReply = await ForumReply.findOne({ topic: reply.topic }).sort(
-        { createdAt: -1 }
-      );
+      const latestReply = await ForumReply.findOne({ 
+        topic: reply.topic,
+        visible: true 
+      }).sort({ createdAt: -1 });
 
       if (latestReply) {
         await ForumTopic.findByIdAndUpdate(reply.topic, {
           lastActivity: latestReply.createdAt,
         });
       } else {
+        
         await ForumTopic.findByIdAndUpdate(reply.topic, {
           lastActivity: topic.createdAt,
         });
