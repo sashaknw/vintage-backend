@@ -3,6 +3,7 @@ const ForumTopic = require("../models/ForumTopic.model");
 const ForumReply = require("../models/ForumReply.model");
 const ModerationSettings = require("../models/ModerationSettings.model");
 const ModerationData = require("../models/ModerationData.model");
+const geminiService = require("../services/geminiService");
 
 // cache for moderation to avoid repeated database calls
 let moderationCache = {
@@ -330,7 +331,7 @@ const moderationController = {
 
       // Apply Gemini AI to ALL content
       try {
-        const geminiService = require("../services/geminiService");
+       
 
         console.log(`Applying AI improvement to topic ${topicId}`);
         const aiImprovement = await geminiService.suggestImprovement(
@@ -388,7 +389,7 @@ const moderationController = {
 
       // Apply Gemini AI to ALL content
       try {
-        const geminiService = require("../services/geminiService");
+      
 
         console.log(`Applying AI improvement to reply ${replyId}`);
         const aiImprovement = await geminiService.suggestImprovement(
@@ -581,7 +582,7 @@ const moderationController = {
 
       console.log("Using Gemini AI for content improvement");
 
-      const geminiService = require("../services/geminiService");
+  
 
       if (!moderationEntry.issues || moderationEntry.issues.length === 0) {
         console.error("No issues found in moderation entry");

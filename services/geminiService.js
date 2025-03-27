@@ -253,3 +253,4 @@ class GeminiService {
     }
   }
 }
+module.exports = new GeminiService();
