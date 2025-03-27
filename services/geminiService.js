@@ -84,7 +84,6 @@ class GeminiService {
     } catch (error) {
       console.error("Error calling Gemini API for moderation:", error);
 
-     
       return {
         isFlagged: false,
         moderationScore: 0,
@@ -104,6 +103,23 @@ class GeminiService {
    */
   async suggestImprovement(originalContent, issues) {
     try {
+      console.log("Starting content improvement with Gemini");
+      console.log(
+        "Original content:",
+        originalContent?.substring(0, 100) + "..."
+      );
+      console.log("Issues:", JSON.stringify(issues));
+
+      if (!originalContent) {
+        console.error("Error: Missing originalContent");
+        return "Unable to generate suggestion. Original content is missing.";
+      }
+
+      if (!Array.isArray(issues) || issues.length === 0) {
+        console.error("Error: Issues array is invalid or empty");
+        return "Unable to generate suggestion. No issues specified.";
+      }
+
       const issuesText = issues
         .map(
           (issue) =>
@@ -127,7 +143,7 @@ class GeminiService {
       Focus on fixing only the problematic parts.
       
       Return ONLY the improved content without any explanations or additional text.`;
-
+      console.log("Sending request to Gemini API");
       const response = await axios.post(
         `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
         {
@@ -146,10 +162,34 @@ class GeminiService {
           },
         }
       );
+      console.log("Received response from Gemini API:", response.status);
 
-      return response.data.candidates[0].content.parts[0].text;
+      if (!response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        console.error(
+          "Unexpected response structure:",
+          JSON.stringify(response.data)
+        );
+        return "Unable to generate suggestion due to API response format.";
+      }
+
+      const improvedContent = response.data.candidates[0].content.parts[0].text;
+      console.log(
+        "Improvement generated successfully:",
+        improvedContent?.substring(0, 100) + "..."
+      );
+      return improvedContent;
     } catch (error) {
-      console.error("Error generating content improvement with Gemini:", error);
+      console.error("Error generating content improvement with Gemini:");
+
+      if (error.response) {
+        console.error("Status:", error.response.status);
+        console.error("Response data:", JSON.stringify(error.response.data));
+      } else if (error.request) {
+        console.error("No response received");
+      } else {
+        console.error("Error message:", error.message);
+      }
+
       return "Unable to generate suggestion. Please review the content manually.";
     }
   }

@@ -478,92 +478,81 @@ const moderationController = {
   },
 
   getContentImprovement: async (req, res) => {
-    try {
-      const { moderationId } = req.params;
+  try {
+    const { moderationId } = req.params;
+    console.log(`Getting content improvement for moderation ID: ${moderationId}`);
 
-      const moderationEntry = await ForumModeration.findById(moderationId);
-      if (!moderationEntry) {
-        return res.status(404).json({ message: "Moderation entry not found" });
-      }
+    const moderationEntry = await ForumModeration.findById(moderationId);
+    if (!moderationEntry) {
+      return res.status(404).json({ message: "Moderation entry not found" });
+    }
 
-      if (moderationEntry.suggestedImprovement) {
-        return res.status(200).json({
-          data: {
-            suggestedImprovement: moderationEntry.suggestedImprovement,
-          },
-        });
-      }
-
-      let suggestedImprovement = moderationEntry.originalContent;
-      await refreshModerationCache();
-
-      //  profanity
-      if (moderationEntry.issues.some((issue) => issue.type === "profanity")) {
-        if (moderationCache.profanity) {
-          for (const profanityGroup of moderationCache.profanity) {
-            for (const word of profanityGroup.patterns) {
-              const regex = new RegExp(`\\b${word}\\b`, "gi");
-              suggestedImprovement = suggestedImprovement.replace(
-                regex,
-                "*".repeat(word.length)
-              );
-            }
-          }
-        }
-
-        // replacements
-        if (moderationCache.specialReplacements) {
-          for (const replacement of moderationCache.specialReplacements) {
-            for (const pattern of replacement.patterns) {
-              if (replacement.isRegex) {
-                const regex = new RegExp(pattern, "gi");
-                suggestedImprovement = suggestedImprovement.replace(
-                  regex,
-                  replacement.replacementValue
-                );
-              } else {
-                const regex = new RegExp(`\\b${pattern}\\b`, "gi");
-                suggestedImprovement = suggestedImprovement.replace(
-                  regex,
-                  replacement.replacementValue
-                );
-              }
-            }
-          }
-        }
-      }
-
-      //  spam
-      if (moderationEntry.issues.some((issue) => issue.type === "spam")) {
-        suggestedImprovement = suggestedImprovement
-          .replace(/\b(www|http)[^\s]+/gi, "[link removed]")
-          .replace(/\b\d+% off\b/gi, "discount")
-          .replace(/buy now/gi, "consider purchasing")
-          .replace(/limited time offer/gi, "available for a limited period");
-      }
-
-      //  harassment
-      if (moderationEntry.issues.some((issue) => issue.type === "harassment")) {
-        suggestedImprovement =
-          "I'd like to express my disagreement in a respectful way. " +
-          "I understand you may have a different perspective, and I'd appreciate further discussion.";
-      }
-
-      moderationEntry.suggestedImprovement = suggestedImprovement;
-      await moderationEntry.save();
-
-      res.status(200).json({
+    console.log(`Found moderation entry with ID ${moderationId}`);
+    
+    if (moderationEntry.suggestedImprovement) {
+      console.log("Using cached suggestion");
+      return res.status(200).json({
         data: {
-          suggestedImprovement: suggestedImprovement,
+          suggestedImprovement: moderationEntry.suggestedImprovement,
         },
       });
-    } catch (error) {
-      console.error("Error generating content improvement:", error);
-      res
-        .status(500)
-        .json({ message: "Error generating improvement suggestion" });
     }
-  },
+
+    console.log("Using Gemini AI for content improvement");
+      
+    const geminiService = require("../services/geminiService");
+    
+    if (!moderationEntry.issues || moderationEntry.issues.length === 0) {
+      console.error("No issues found in moderation entry");
+      return res.status(400).json({ 
+        message: "No issues found for AI improvement" 
+      });
+    }
+
+    if (!moderationEntry.originalContent) {
+      console.error("No original content found in moderation entry");
+      return res.status(400).json({ 
+        message: "Missing original content for AI improvement" 
+      });
+    }
+
+    console.log("Calling Gemini service with:", {
+      contentLength: moderationEntry.originalContent.length,
+      issuesCount: moderationEntry.issues.length,
+      issues: JSON.stringify(moderationEntry.issues)
+    });
+    
+    const aiImprovement = await geminiService.suggestImprovement(
+      moderationEntry.originalContent,
+      moderationEntry.issues
+    );
+    
+    console.log("Received AI suggestion:", {
+      suggestionLength: aiImprovement?.length || 0
+    });
+    
+    moderationEntry.suggestedImprovement = aiImprovement;
+    await moderationEntry.save();
+    
+    return res.status(200).json({
+      data: {
+        suggestedImprovement: aiImprovement
+      }
+    });
+  } catch (error) {
+    console.error("Error generating content improvement with Gemini AI:", error);
+    
+    if (error.response) {
+      console.error("API response data:", error.response.data);
+      console.error("API response status:", error.response.status);
+    }
+    
+    res.status(500).json({ 
+      message: "Error generating AI improvement suggestion",
+      error: error.message
+    });
+  }
+},
 
   getModerationReport: async (req, res) => {
     try {
