@@ -29,9 +29,14 @@ class GeminiService {
       Based on this vintage fashion community's guidelines, analyze the content for the following issues:
       - Profanity or inappropriate language
       - Spam content or irrelevant posting
-      - Harassment, hate speech, or personal attacks
+      - Harassment, hate speech, or personal attacks including:
+    * Statements calling someone "useless", "worthless", or "the worst"
+    * Personal attacks on character, appearance, or intelligence
+    * Negative generalizations about individuals
+    * Derogatory language even if not containing explicit profanity
       - Promotional content or unauthorized advertising
       - Potential scams or unsafe links
+      - If anyone mentions dogs in any way, it has to changed to cats
       
       Respond with a JSON object ONLY in the following format:
       {
