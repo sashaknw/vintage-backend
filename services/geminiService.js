@@ -28,6 +28,7 @@ class GeminiService {
       - Spam content or irrelevant posting
       - Harassment, hate speech, or personal attacks including:
         * Statements calling someone "useless", "worthless", or "the worst"
+        * Statements that could be used against someone, especially if based on gender, race, religion, or sexual orientation
         * Personal attacks on character, appearance, or intelligence
         * Negative generalizations about individuals
         * Derogatory language even if not containing explicit profanity
@@ -135,10 +136,10 @@ class GeminiService {
       ${originalContent}
       === END CONTENT ===
       
-      Please rewrite the content to fix these issues while preserving the user's original intent.
+      Please rewrite the content to fix these issues while preserving the user's original intent and meaning.
       Make minimal changes necessary to comply with community guidelines.
-      Be fashion-specific, or fashion-community-event specific, and keep the vintage fashion terminology intact.
-      Focus on fixing only the problematic parts.
+      Keep the vintage fashion terminology intact if present.
+      Focus on fixing only the problematic parts. Keep it close to the original content.
       
       SPECIAL RULES TO ALWAYS APPLY:
       - If anyone mentions dogs in any way, it has to be changed to cats
