@@ -232,7 +232,7 @@ router.get("/topics/:topicId", async (req, res, next) => {
    repliesQuery.visible = true;
  }
 
-    const replies = await ForumReply.find({ topic: topicId })
+    const replies = await ForumReply.find(repliesQuery)
       .populate("author", "name profilePicture isAdmin")
       .sort({ createdAt: 1 });
  const pendingCount = !isUserAdmin

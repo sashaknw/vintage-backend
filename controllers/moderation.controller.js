@@ -77,44 +77,61 @@ const refreshModerationCache = async () => {
 };
 
 const analyzeContent = async (content) => {
-  //latest moderation data
   await refreshModerationCache();
 
   const issues = [];
   let moderationScore = 0;
   let modifiedContent = content;
 
-  // special replacements first
   if (moderationCache.specialReplacements) {
     for (const replacement of moderationCache.specialReplacements) {
       for (const pattern of replacement.patterns) {
         if (replacement.isRegex) {
-          const regex = new RegExp(pattern, "gi");
-          modifiedContent = modifiedContent.replace(
-            regex,
-            replacement.replacementValue
-          );
+          try {
+            const regex = new RegExp(pattern, "gi");
+            modifiedContent = modifiedContent.replace(
+              regex,
+              replacement.replacementValue
+            );
+          } catch (error) {
+            console.error(`Invalid regex pattern: ${pattern}`, error);
+          }
         } else {
-          const regex = new RegExp(`\\b${pattern}\\b`, "gi");
-          modifiedContent = modifiedContent.replace(
-            regex,
-            replacement.replacementValue
-          );
+          try {
+            const escapedPattern = pattern.replace(
+              /[.*+?^${}()|[\]\\]/g,
+              "\\$&"
+            );
+            const regex = new RegExp(`\\b${escapedPattern}\\b`, "gi");
+            modifiedContent = modifiedContent.replace(
+              regex,
+              replacement.replacementValue
+            );
+          } catch (error) {
+            console.error(
+              `Error creating regex for pattern: ${pattern}`,
+              error
+            );
+          }
         }
       }
     }
   }
 
-  // check profanity
   if (moderationCache.profanity) {
     for (const profanityGroup of moderationCache.profanity) {
       let profanityFound = false;
 
       for (const word of profanityGroup.patterns) {
-        const regex = new RegExp(`\\b${word}\\b`, "i");
-        if (regex.test(content)) {
-          profanityFound = true;
-          break;
+        try {
+          const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const regex = new RegExp(`\\b${escapedWord}\\b`, "i");
+          if (regex.test(content)) {
+            profanityFound = true;
+            break;
+          }
+        } catch (error) {
+          console.error(`Invalid profanity pattern: ${word}`, error);
         }
       }
 
@@ -131,16 +148,19 @@ const analyzeContent = async (content) => {
     }
   }
 
-  // high-priority spam patterns 
   if (moderationCache.highPrioritySpam) {
     for (const spamGroup of moderationCache.highPrioritySpam) {
       let highPrioritySpamFound = false;
 
       for (const pattern of spamGroup.patterns) {
-        const regex = new RegExp(pattern, "i");
-        if (regex.test(content)) {
-          highPrioritySpamFound = true;
-          break;
+        try {
+          const regex = new RegExp(pattern, "i");
+          if (regex.test(content)) {
+            highPrioritySpamFound = true;
+            break;
+          }
+        } catch (error) {
+          console.error(`Invalid spam pattern: ${pattern}`, error);
         }
       }
 
@@ -157,19 +177,22 @@ const analyzeContent = async (content) => {
     }
   }
 
-  // spam patterns 
   if (moderationCache.spam) {
     let spamCount = 0;
     let spamSeverity = 0;
 
     for (const spamGroup of moderationCache.spam) {
       for (const pattern of spamGroup.patterns) {
-        const regex = spamGroup.isRegex
-          ? new RegExp(pattern, "i")
-          : new RegExp(`\\b${pattern}\\b`, "i");
-        if (regex.test(content)) {
-          spamCount++;
-          spamSeverity = Math.max(spamSeverity, spamGroup.severity || 0.6);
+        try {
+          const regex = spamGroup.isRegex
+            ? new RegExp(pattern, "i")
+            : new RegExp(`\\b${pattern}\\b`, "i");
+          if (regex.test(content)) {
+            spamCount++;
+            spamSeverity = Math.max(spamSeverity, spamGroup.severity || 0.6);
+          }
+        } catch (error) {
+          console.error(`Invalid spam pattern: ${pattern}`, error);
         }
       }
     }
@@ -184,16 +207,19 @@ const analyzeContent = async (content) => {
     }
   }
 
-  // harassment patterns
   if (moderationCache.harassment) {
     for (const harassmentGroup of moderationCache.harassment) {
       let harassmentFound = false;
 
       for (const pattern of harassmentGroup.patterns) {
-        const regex = new RegExp(pattern, "i");
-        if (regex.test(content)) {
-          harassmentFound = true;
-          break;
+        try {
+          const regex = new RegExp(pattern, "i");
+          if (regex.test(content)) {
+            harassmentFound = true;
+            break;
+          }
+        } catch (error) {
+          console.error(`Invalid harassment pattern: ${pattern}`, error);
         }
       }
 
@@ -289,62 +315,115 @@ const moderationController = {
 
   saveModerationForTopic: async (topicId, moderationResult) => {
     try {
-      if (!moderationResult.analysis.isFlagged) {
-        return null;
+      if (moderationResult.analysis.isFlagged) {
+        await ForumModeration.create({
+          contentType: "topic",
+          contentId: topicId,
+          originalContent: moderationResult.originalContent,
+          moderationScore: moderationResult.analysis.moderationScore,
+          isFlagged: true,
+          issues: moderationResult.analysis.issues,
+          status: "pending",
+        });
+        console.log(`Moderation entry created for flagged topic ${topicId}`);
       }
 
-      await ForumModeration.create({
-        contentType: "topic",
-        contentId: topicId,
-        originalContent: moderationResult.originalContent,
-        moderationScore: moderationResult.analysis.moderationScore,
-        isFlagged: true,
-        issues: moderationResult.analysis.issues,
-        status: "pending",
-      });
+      // Apply Gemini AI to ALL content
+      try {
+        const geminiService = require("../services/geminiService");
 
-      console.log(`Moderation saved for topic ${topicId}`);
+        console.log(`Applying AI improvement to topic ${topicId}`);
+        const aiImprovement = await geminiService.suggestImprovement(
+          moderationResult.originalContent,
+          moderationResult.analysis.issues || []
+        );
+
+        if (
+          aiImprovement &&
+          aiImprovement !== moderationResult.originalContent
+        ) {
+          console.log(`AI suggested changes for topic ${topicId}`);
+          await ForumTopic.findByIdAndUpdate(topicId, {
+            content: aiImprovement,
+            hasSpecialReplacements: true,
+          });
+
+          // If a moderation entry exists, update it with the suggestion
+          if (moderationResult.analysis.isFlagged) {
+            await ForumModeration.findOneAndUpdate(
+              { contentId: topicId, contentType: "topic" },
+              { suggestedImprovement: aiImprovement },
+              { new: true }
+            );
+          }
+        } else {
+          console.log(`No AI changes for topic ${topicId}`);
+        }
+      } catch (aiError) {
+        console.error("Error applying AI improvement:", aiError);
+      }
+
       return true;
     } catch (error) {
-      console.error("Error saving topic moderation:", error);
+      console.error("Error processing topic moderation:", error);
       return false;
     }
   },
 
   saveModerationForReply: async (replyId, moderationResult) => {
     try {
-      if (
-        !moderationResult.analysis.isFlagged &&
-        !moderationResult.analysis.modifiedContent
-      ) {
-        return null;
-      }
-
-      await ForumModeration.create({
-        contentType: "reply",
-        contentId: replyId,
-        originalContent: moderationResult.originalContent,
-        moderationScore: moderationResult.analysis.moderationScore,
-        isFlagged: true,
-        issues: moderationResult.analysis.issues,
-        status: "pending",
-      });
-
-      if (
-        moderationResult.analysis.modifiedContent &&
-        moderationResult.analysis.modifiedContent !==
-          moderationResult.originalContent
-      ) {
-        await ForumReply.findByIdAndUpdate(replyId, {
-          content: moderationResult.analysis.modifiedContent,
-          hasSpecialReplacements: true,
+      // Only create moderation entries for flagged content
+      if (moderationResult.analysis.isFlagged) {
+        await ForumModeration.create({
+          contentType: "reply",
+          contentId: replyId,
+          originalContent: moderationResult.originalContent,
+          moderationScore: moderationResult.analysis.moderationScore,
+          isFlagged: true,
+          issues: moderationResult.analysis.issues,
+          status: "pending",
         });
+        console.log(`Moderation entry created for flagged reply ${replyId}`);
       }
 
-      console.log(`Moderation saved for reply ${replyId}`);
+      // Apply Gemini AI to ALL content
+      try {
+        const geminiService = require("../services/geminiService");
+
+        console.log(`Applying AI improvement to reply ${replyId}`);
+        const aiImprovement = await geminiService.suggestImprovement(
+          moderationResult.originalContent,
+          moderationResult.analysis.issues || []
+        );
+
+        if (
+          aiImprovement &&
+          aiImprovement !== moderationResult.originalContent
+        ) {
+          console.log(`AI suggested changes for reply ${replyId}`);
+          await ForumReply.findByIdAndUpdate(replyId, {
+            content: aiImprovement,
+            hasSpecialReplacements: true,
+          });
+
+          // If a moderation entry exists, update it with the suggestion
+          if (moderationResult.analysis.isFlagged) {
+            await ForumModeration.findOneAndUpdate(
+              { contentId: replyId, contentType: "reply" },
+              { suggestedImprovement: aiImprovement },
+              { new: true }
+            );
+          }
+        } else {
+          console.log(`No AI changes for reply ${replyId}`);
+        }
+      } catch (aiError) {
+        console.error("Error applying AI improvement:", aiError);
+      }
+
       return true;
     } catch (error) {
-      console.error("Error saving reply moderation:", error);
+      console.error("Error processing reply moderation:", error);
       return false;
     }
   },
@@ -478,81 +557,86 @@ const moderationController = {
   },
 
   getContentImprovement: async (req, res) => {
-  try {
-    const { moderationId } = req.params;
-    console.log(`Getting content improvement for moderation ID: ${moderationId}`);
+    try {
+      const { moderationId } = req.params;
+      console.log(
+        `Getting content improvement for moderation ID: ${moderationId}`
+      );
 
-    const moderationEntry = await ForumModeration.findById(moderationId);
-    if (!moderationEntry) {
-      return res.status(404).json({ message: "Moderation entry not found" });
-    }
+      const moderationEntry = await ForumModeration.findById(moderationId);
+      if (!moderationEntry) {
+        return res.status(404).json({ message: "Moderation entry not found" });
+      }
 
-    console.log(`Found moderation entry with ID ${moderationId}`);
-    
-    if (moderationEntry.suggestedImprovement) {
-      console.log("Using cached suggestion");
+      console.log(`Found moderation entry with ID ${moderationId}`);
+
+      if (moderationEntry.suggestedImprovement) {
+        console.log("Using cached suggestion");
+        return res.status(200).json({
+          data: {
+            suggestedImprovement: moderationEntry.suggestedImprovement,
+          },
+        });
+      }
+
+      console.log("Using Gemini AI for content improvement");
+
+      const geminiService = require("../services/geminiService");
+
+      if (!moderationEntry.issues || moderationEntry.issues.length === 0) {
+        console.error("No issues found in moderation entry");
+        return res.status(400).json({
+          message: "No issues found for AI improvement",
+        });
+      }
+
+      if (!moderationEntry.originalContent) {
+        console.error("No original content found in moderation entry");
+        return res.status(400).json({
+          message: "Missing original content for AI improvement",
+        });
+      }
+
+      console.log("Calling Gemini service with:", {
+        contentLength: moderationEntry.originalContent.length,
+        issuesCount: moderationEntry.issues.length,
+        issues: JSON.stringify(moderationEntry.issues),
+      });
+
+      const aiImprovement = await geminiService.suggestImprovement(
+        moderationEntry.originalContent,
+        moderationEntry.issues
+      );
+
+      console.log("Received AI suggestion:", {
+        suggestionLength: aiImprovement?.length || 0,
+      });
+
+      moderationEntry.suggestedImprovement = aiImprovement;
+      await moderationEntry.save();
+
       return res.status(200).json({
         data: {
-          suggestedImprovement: moderationEntry.suggestedImprovement,
+          suggestedImprovement: aiImprovement,
         },
       });
-    }
+    } catch (error) {
+      console.error(
+        "Error generating content improvement with Gemini AI:",
+        error
+      );
 
-    console.log("Using Gemini AI for content improvement");
-      
-    const geminiService = require("../services/geminiService");
-    
-    if (!moderationEntry.issues || moderationEntry.issues.length === 0) {
-      console.error("No issues found in moderation entry");
-      return res.status(400).json({ 
-        message: "No issues found for AI improvement" 
-      });
-    }
-
-    if (!moderationEntry.originalContent) {
-      console.error("No original content found in moderation entry");
-      return res.status(400).json({ 
-        message: "Missing original content for AI improvement" 
-      });
-    }
-
-    console.log("Calling Gemini service with:", {
-      contentLength: moderationEntry.originalContent.length,
-      issuesCount: moderationEntry.issues.length,
-      issues: JSON.stringify(moderationEntry.issues)
-    });
-    
-    const aiImprovement = await geminiService.suggestImprovement(
-      moderationEntry.originalContent,
-      moderationEntry.issues
-    );
-    
-    console.log("Received AI suggestion:", {
-      suggestionLength: aiImprovement?.length || 0
-    });
-    
-    moderationEntry.suggestedImprovement = aiImprovement;
-    await moderationEntry.save();
-    
-    return res.status(200).json({
-      data: {
-        suggestedImprovement: aiImprovement
+      if (error.response) {
+        console.error("API response data:", error.response.data);
+        console.error("API response status:", error.response.status);
       }
-    });
-  } catch (error) {
-    console.error("Error generating content improvement with Gemini AI:", error);
-    
-    if (error.response) {
-      console.error("API response data:", error.response.data);
-      console.error("API response status:", error.response.status);
+
+      res.status(500).json({
+        message: "Error generating AI improvement suggestion",
+        error: error.message,
+      });
     }
-    
-    res.status(500).json({ 
-      message: "Error generating AI improvement suggestion",
-      error: error.message
-    });
-  }
-},
+  },
 
   getModerationReport: async (req, res) => {
     try {

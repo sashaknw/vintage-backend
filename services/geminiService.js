@@ -27,10 +27,10 @@ class GeminiService {
       - Profanity or inappropriate language
       - Spam content or irrelevant posting
       - Harassment, hate speech, or personal attacks including:
-    * Statements calling someone "useless", "worthless", or "the worst"
-    * Personal attacks on character, appearance, or intelligence
-    * Negative generalizations about individuals
-    * Derogatory language even if not containing explicit profanity
+        * Statements calling someone "useless", "worthless", or "the worst"
+        * Personal attacks on character, appearance, or intelligence
+        * Negative generalizations about individuals
+        * Derogatory language even if not containing explicit profanity
       - Promotional content or unauthorized advertising
       - Potential scams or unsafe links
       - If anyone mentions dogs in any way, it has to changed to cats
@@ -84,6 +84,7 @@ class GeminiService {
     } catch (error) {
       console.error("Error calling Gemini API for moderation:", error);
 
+     
       return {
         isFlagged: false,
         moderationScore: 0,
@@ -96,42 +97,39 @@ class GeminiService {
   }
 
   /**
-   * Generate a suggested improvement for flagged content
-   * @param {string} originalContent - The original content that was flagged
-   * @param {Array} issues - Array of issues detected in the content
+   * Generate a suggested improvement for content
+   * @param {string} originalContent - The original content
+   * @param {Array} issues - Array of issues detected in the content (can be empty)
    * @returns {Promise<string>} - Suggested improved content
    */
-  async suggestImprovement(originalContent, issues) {
+  async suggestImprovement(originalContent, issues = []) {
     try {
       console.log("Starting content improvement with Gemini");
-      console.log(
-        "Original content:",
-        originalContent?.substring(0, 100) + "..."
-      );
-      console.log("Issues:", JSON.stringify(issues));
-
+      console.log("Original content:", originalContent?.substring(0, 100) + "...");
+      console.log("Issues count:", issues?.length || 0);
+      
+      // Check for valid inputs
       if (!originalContent) {
-        console.error("Error: Missing originalContent");
-        return "Unable to generate suggestion. Original content is missing.";
+        console.error("Error: originalContent is empty or undefined");
+        return originalContent;
       }
-
-      if (!Array.isArray(issues) || issues.length === 0) {
-        console.error("Error: Issues array is invalid or empty");
-        return "Unable to generate suggestion. No issues specified.";
-      }
-
-      const issuesText = issues
-        .map(
-          (issue) =>
-            `- ${issue.type}: ${issue.explanation} (severity: ${issue.severity})`
-        )
-        .join("\n");
-
+      
+      // Format issues - handles case where no issues are found
+      const issuesText = issues && issues.length > 0
+        ? issues
+            .map(
+              (issue) =>
+                `- ${issue.type}: ${issue.explanation} (severity: ${issue.severity})`
+            )
+            .join("\n")
+        : "No major issues detected, but please apply the following rules:";
+      
       const prompt = `
       You are VintageVaultMod, an AI forum moderator for a vintage fashion community platform.
       
-      The following content has been flagged for moderation due to these issues:
-      ${issuesText}
+      ${issues && issues.length > 0 
+        ? `The following content has been flagged for moderation due to these issues:\n${issuesText}`
+        : `Please review the following content using these guidelines:\n${issuesText}`}
       
       === ORIGINAL CONTENT ===
       ${originalContent}
@@ -142,7 +140,14 @@ class GeminiService {
       Be fashion-specific, or fashion-community-event specific, and keep the vintage fashion terminology intact.
       Focus on fixing only the problematic parts.
       
-      Return ONLY the improved content without any explanations or additional text.`;
+      SPECIAL RULES TO ALWAYS APPLY:
+      - If anyone mentions dogs in any way, it has to be changed to cats
+      - Remove any external links and replace them with "[link removed]"
+      - Make sure all communication is respectful and friendly
+      
+      Return ONLY the improved content without any explanations or additional text. 
+      If no changes are needed, return the original text unchanged.`;
+
       console.log("Sending request to Gemini API");
       const response = await axios.post(
         `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
@@ -162,25 +167,27 @@ class GeminiService {
           },
         }
       );
-      console.log("Received response from Gemini API:", response.status);
-
+      
+      console.log("Received response from Gemini API");
+      
+      // Check if response has the expected structure
       if (!response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-        console.error(
-          "Unexpected response structure:",
-          JSON.stringify(response.data)
-        );
-        return "Unable to generate suggestion due to API response format.";
+        console.error("Unexpected response structure:", JSON.stringify(response.data));
+        return originalContent;
       }
-
+      
       const improvedContent = response.data.candidates[0].content.parts[0].text;
-      console.log(
-        "Improvement generated successfully:",
-        improvedContent?.substring(0, 100) + "..."
-      );
-      return improvedContent;
+      console.log("Improvement generated successfully");
+      
+      // Only return the improved content if it's different from the original
+      if (improvedContent !== originalContent) {
+        return improvedContent;
+      } else {
+        return originalContent;
+      }
     } catch (error) {
       console.error("Error generating content improvement with Gemini:");
-
+      
       if (error.response) {
         console.error("Status:", error.response.status);
         console.error("Response data:", JSON.stringify(error.response.data));
@@ -189,8 +196,9 @@ class GeminiService {
       } else {
         console.error("Error message:", error.message);
       }
-
-      return "Unable to generate suggestion. Please review the content manually.";
+      
+      // Return original content if there's an error
+      return originalContent;
     }
   }
 
@@ -245,5 +253,3 @@ class GeminiService {
     }
   }
 }
-
-module.exports = new GeminiService();
